@@ -3,11 +3,6 @@
   "buildCommand": "vite build",
   "outputDirectory": "dist",
   "rewrites": [
-    { "source": "/api/auth/(.*)", "destination": "/api/auth/[...path]" },
-    { "source": "/api/entities/(.*)", "destination": "/api/entities/[...path]" },
-    { "source": "/api/public/(.*)", "destination": "/api/public/[...path]" },
-    { "source": "/api/functions/(.*)", "destination": "/api/functions/[...path]" },
-    { "source": "/api/integrations/(.*)", "destination": "/api/integrations/[...path]" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ],
   "headers": [
