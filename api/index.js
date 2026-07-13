@@ -274,6 +274,11 @@ export default async function handler(req, res) {
     }
     // ============ PUBLIC ============
     if (group === 'public') {
+      const action = rest[0];
+      if (req.method !== 'POST') return send(res, 404, { error: 'Not found' });
+      const strict = action === 'portal-login' || action === 'proposal-response';
+      if (await enforceRateLimit(req, res, { name: `public-${action}`, identifier: clientIp(req), limit: strict ? 20 : 60, windowSec: 60 })) return;
+      const body = await readJson(req);
 
     // ---------- CLIENT PORTAL LOGIN ----------
     if (action === 'portal-login') {
@@ -442,6 +447,11 @@ export default async function handler(req, res) {
     }
     // ============ FUNCTIONS ============
     if (group === 'functions') {
+      const action = rest[0];
+      if (req.method !== 'POST') return send(res, 404, { error: 'Not found' });
+      const user = await getUserFromReq(req);
+      if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
+      const body = await readJson(req);
 
     if (action === 'sendProposalEmail') {
       const proposalRow = first(await supa.select('proposals', { id: `eq.${body.proposalId}` }));
@@ -487,6 +497,9 @@ export default async function handler(req, res) {
     }
     // ============ INTEGRATIONS ============
     if (group === 'integrations') {
+      const action = rest[0];
+      const user = await getUserFromReq(req);
+      if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
 
     if (action === 'upload') {
       // Προστασία: max 30 uploads ανά χρήστη / ώρα
