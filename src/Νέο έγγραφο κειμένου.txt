@@ -1,0 +1,13 @@
+30162387-6d9d-43ba-aac1-495e73f81840 - merchant id
+
+
+
+	XTAu&J - api key
+
+
+
+	367vozm71qvqi4jeg4dmj30e0qdh2i31y7q431qrx1jd7.apps.vivapayments.com - client id
+
+
+
+JsK0BvMYACTtiRLjLG9Zj08u21tC8A - client secret
