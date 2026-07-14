@@ -24,6 +24,7 @@ import {
   Save // Added for saving user info
 } from "lucide-react";
 import { Organization, User as UserModel } from "@/api/entities";
+import AccountSecurity from "@/components/settings/AccountSecurity";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 // Cache to prevent multiple API calls
@@ -362,6 +363,13 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {user && (
+          <AccountSecurity
+            user={user}
+            onEmailChanged={(u) => { setUser(u); setEditableUser(u); }}
+          />
         )}
 
         <Tabs defaultValue="organization" className="w-full">

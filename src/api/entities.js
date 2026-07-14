@@ -70,6 +70,16 @@ export const User = {
     body: { token, password },
   }),
 
+  changePassword: (currentPassword, newPassword) => apiFetch('/api/auth/change-password', {
+    method: 'POST',
+    body: { currentPassword, newPassword },
+  }),
+
+  changeEmail: (newEmail, currentPassword) => apiFetch('/api/auth/change-email', {
+    method: 'POST',
+    body: { newEmail, currentPassword },
+  }),
+
   register: async (email, password, full_name) => {
     const { token, user } = await apiFetch('/api/auth/register', {
       method: 'POST',

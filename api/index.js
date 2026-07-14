@@ -226,6 +226,57 @@ export default async function handler(req, res) {
       }
     }
 
+    // ---------- CHANGE PASSWORD (συνδεδεμένος χρήστης) ----------
+    if (action === 'change-password' && req.method === 'POST') {
+      const user = await getUserFromReq(req);
+      if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
+      const { currentPassword, newPassword } = await readJson(req);
+      if (!newPassword || newPassword.length < 8) {
+        return send(res, 400, { error: 'Ο νέος κωδικός πρέπει να έχει τουλάχιστον 8 χαρακτήρες.' });
+      }
+      // Αν ο λογαριασμός έχει κωδικό (όχι μόνο-Google), απαίτησε τον τρέχοντα.
+      const isGoogleOnly = user.password === 'google-oauth-no-password';
+      if (!isGoogleOnly) {
+        if (!currentPassword || !verifyPassword(currentPassword, user.password)) {
+          return send(res, 400, { error: 'Ο τρέχων κωδικός είναι λάθος.' });
+        }
+      }
+      await supa.update('app_users', user.id, {
+        password: hashPassword(newPassword),
+        updated_date: now(),
+      });
+      return send(res, 200, { ok: true, message: 'Ο κωδικός άλλαξε επιτυχώς.' });
+    }
+
+    // ---------- CHANGE EMAIL (συνδεδεμένος χρήστης) ----------
+    if (action === 'change-email' && req.method === 'POST') {
+      const user = await getUserFromReq(req);
+      if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
+      const { newEmail, currentPassword } = await readJson(req);
+      const normalized = String(newEmail || '').trim().toLowerCase();
+      if (!normalized || !normalized.includes('@')) {
+        return send(res, 400, { error: 'Μη έγκυρο email.' });
+      }
+      // Επιβεβαίωση ταυτότητας με κωδικό (εκτός αν είναι μόνο-Google).
+      const isGoogleOnly = user.password === 'google-oauth-no-password';
+      if (!isGoogleOnly) {
+        if (!currentPassword || !verifyPassword(currentPassword, user.password)) {
+          return send(res, 400, { error: 'Ο κωδικός είναι λάθος.' });
+        }
+      }
+      // Έλεγχος ότι το νέο email δεν χρησιμοποιείται ήδη.
+      const existing = first(await supa.select('app_users', { email: `eq.${normalized}` }));
+      if (existing && existing.id !== user.id) {
+        return send(res, 409, { error: 'Το email χρησιμοποιείται ήδη από άλλον λογαριασμό.' });
+      }
+      const updated = await supa.update('app_users', user.id, {
+        email: normalized,
+        email_verified: false,
+        updated_date: now(),
+      });
+      return send(res, 200, { ok: true, user: publicUser(updated), message: 'Το email άλλαξε.' });
+    }
+
     // ---------- USERS (admin) ----------
     if (action === 'users' && req.method === 'GET') {
       const user = await getUserFromReq(req);
