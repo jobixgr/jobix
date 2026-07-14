@@ -54,6 +54,56 @@ export default function Login() {
     }
   };
 
+  // ---------- Google Sign-In ----------
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  const handleGoogleCredential = async (response) => {
+    setError('');
+    setIsLoading(true);
+    try {
+      const user = await User.loginWithGoogle(response.credential);
+      afterAuth(user);
+    } catch (err) {
+      setError(err.message || 'Η σύνδεση με Google απέτυχε.');
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!googleClientId) return; // δεν έχει ρυθμιστεί ακόμα — κρύβουμε το κουμπί
+    const scriptId = 'google-identity-services';
+    const init = () => {
+      if (!window.google?.accounts?.id) return;
+      window.google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredential,
+      });
+      const btn = document.getElementById('google-signin-button');
+      if (btn) {
+        btn.innerHTML = '';
+        window.google.accounts.id.renderButton(btn, {
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          text: mode === 'register' ? 'signup_with' : 'signin_with',
+          locale: 'el',
+        });
+      }
+    };
+    if (document.getElementById(scriptId)) {
+      init();
+    } else {
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.async = true;
+      s.defer = true;
+      s.id = scriptId;
+      s.onload = init;
+      document.body.appendChild(s);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, googleClientId]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
@@ -76,6 +126,16 @@ export default function Login() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {googleClientId && (
+              <div className="mb-5">
+                <div id="google-signin-button" className="flex justify-center" />
+                <div className="flex items-center gap-3 my-5">
+                  <div className="h-px bg-slate-200 flex-1" />
+                  <span className="text-xs text-slate-400">ή με email</span>
+                  <div className="h-px bg-slate-200 flex-1" />
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit} className="space-y-4">
               {mode === 'register' && (
                 <div className="space-y-1.5">

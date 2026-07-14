@@ -51,6 +51,15 @@ export const User = {
     return user;
   },
 
+  loginWithGoogle: async (credential) => {
+    const { token, user } = await apiFetch('/api/auth/google', {
+      method: 'POST',
+      body: { credential },
+    });
+    setToken(token);
+    return user;
+  },
+
   register: async (email, password, full_name) => {
     const { token, user } = await apiFetch('/api/auth/register', {
       method: 'POST',

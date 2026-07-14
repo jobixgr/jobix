@@ -93,6 +93,45 @@ export default async function handler(req, res) {
     }
 
     // ---------- LOGIN ----------
+    // ---------- GOOGLE OAUTH ----------
+    if (action === 'google' && req.method === 'POST') {
+      if (await enforceRateLimit(req, res, { name: 'google-login', identifier: clientIp(req), limit: 20, windowSec: 900 })) return;
+      const { credential } = await readJson(req);
+      if (!credential) return send(res, 400, { error: 'Λείπει το Google credential.' });
+
+      // Επαλήθευση του Google ID token μέσω του tokeninfo endpoint της Google.
+      const gRes = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(credential)}`);
+      if (!gRes.ok) return send(res, 401, { error: 'Μη έγκυρη σύνδεση Google.' });
+      const gData = await gRes.json();
+
+      // Έλεγχος ότι το token προορίζεται για τη δική μας εφαρμογή.
+      const expectedClientId = process.env.GOOGLE_CLIENT_ID;
+      if (expectedClientId && gData.aud !== expectedClientId) {
+        return send(res, 401, { error: 'Το Google token δεν προορίζεται για αυτή την εφαρμογή.' });
+      }
+      if (gData.email_verified !== 'true' && gData.email_verified !== true) {
+        return send(res, 401, { error: 'Το Google email δεν είναι επιβεβαιωμένο.' });
+      }
+
+      const email = String(gData.email || '').trim().toLowerCase();
+      if (!email) return send(res, 401, { error: 'Δεν βρέθηκε email στη σύνδεση Google.' });
+
+      // Βρες υπάρχοντα χρήστη ή δημιούργησε νέο (χωρίς κωδικό — μόνο Google).
+      let user = first(await supa.select('app_users', { email: `eq.${email}` }));
+      if (!user) {
+        user = await supa.insert('app_users', {
+          email,
+          password: 'google-oauth-no-password',  // δεν χρησιμοποιείται ποτέ για login
+          full_name: gData.name || '',
+          role: 'user',
+          organization_id: null,
+          auth_provider: 'google',
+        });
+      }
+      const token = signToken({ sub: user.id });
+      return send(res, 200, { token, user: publicUser(user) });
+    }
+
     if (action === 'login' && req.method === 'POST') {
       const { email, password } = await readJson(req);
       const normalized = String(email || '').trim().toLowerCase();
