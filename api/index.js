@@ -125,7 +125,6 @@ export default async function handler(req, res) {
           full_name: gData.name || '',
           role: 'user',
           organization_id: null,
-          auth_provider: 'google',
         });
       }
       const token = signToken({ sub: user.id });
