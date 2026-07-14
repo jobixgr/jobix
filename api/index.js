@@ -152,6 +152,52 @@ export default async function handler(req, res) {
       return send(res, 200, { ok: true }); // stateless JWT
     }
 
+    // ---------- FORGOT PASSWORD (στέλνει email με link) ----------
+    if (action === 'forgot-password' && req.method === 'POST') {
+      // Προστασία: max 5 αιτήματα ανά IP / 15 λεπτά
+      if (await enforceRateLimit(req, res, { name: 'forgot-pw', identifier: clientIp(req), limit: 5, windowSec: 900 })) return;
+      const { email, origin } = await readJson(req);
+      const normalized = String(email || '').trim().toLowerCase();
+      // Για ασφάλεια, ΠΑΝΤΑ επιστρέφουμε ok (να μην αποκαλύπτουμε ποια emails υπάρχουν).
+      const user = first(await supa.select('app_users', { email: `eq.${normalized}` }));
+      if (user) {
+        const token = crypto.randomBytes(32).toString('hex');
+        const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 ώρα
+        await supa.update('app_users', user.id, { reset_token: token, reset_expires: expires });
+        const link = `${origin || ''}/reset-password?token=${token}`;
+        try {
+          await sendEmail({
+            to: normalized,
+            subject: 'Επαναφορά κωδικού — Jobix',
+            body: `Λάβαμε αίτημα επαναφοράς κωδικού για τον λογαριασμό σας.\n\nΠατήστε τον παρακάτω σύνδεσμο για να ορίσετε νέο κωδικό (ισχύει για 1 ώρα):\n\n${link}\n\nΑν δεν ζητήσατε εσείς επαναφορά, αγνοήστε αυτό το email.\n\nΜε εκτίμηση,\nJobix`,
+          });
+        } catch (e) {
+          console.error('forgot-password email error:', e);
+        }
+      }
+      return send(res, 200, { ok: true, message: 'Αν υπάρχει λογαριασμός με αυτό το email, στάλθηκε σύνδεσμος επαναφοράς.' });
+    }
+
+    // ---------- RESET PASSWORD (βάζει νέο κωδικό με το token) ----------
+    if (action === 'reset-password' && req.method === 'POST') {
+      if (await enforceRateLimit(req, res, { name: 'reset-pw', identifier: clientIp(req), limit: 10, windowSec: 900 })) return;
+      const { token, password } = await readJson(req);
+      if (!token || !password || password.length < 8) {
+        return send(res, 400, { error: 'Απαιτείται έγκυρο token και κωδικός τουλάχιστον 8 χαρακτήρων.' });
+      }
+      const user = first(await supa.select('app_users', { reset_token: `eq.${token}` }));
+      if (!user || !user.reset_expires || new Date(user.reset_expires) < new Date()) {
+        return send(res, 400, { error: 'Ο σύνδεσμος επαναφοράς είναι άκυρος ή έχει λήξει. Ζητήστε νέο.' });
+      }
+      await supa.update('app_users', user.id, {
+        password: hashPassword(password),
+        reset_token: null,
+        reset_expires: null,
+        updated_date: now(),
+      });
+      return send(res, 200, { ok: true, message: 'Ο κωδικός άλλαξε. Μπορείτε τώρα να συνδεθείτε.' });
+    }
+
     // ---------- ME ----------
     if (action === 'me') {
       const user = await getUserFromReq(req);

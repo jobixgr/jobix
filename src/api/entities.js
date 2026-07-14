@@ -60,6 +60,16 @@ export const User = {
     return user;
   },
 
+  forgotPassword: (email) => apiFetch('/api/auth/forgot-password', {
+    method: 'POST',
+    body: { email, origin: window.location.origin },
+  }),
+
+  resetPassword: (token, password) => apiFetch('/api/auth/reset-password', {
+    method: 'POST',
+    body: { token, password },
+  }),
+
   register: async (email, password, full_name) => {
     const { token, user } = await apiFetch('/api/auth/register', {
       method: 'POST',

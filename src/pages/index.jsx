@@ -8,6 +8,8 @@ import Layout from './Layout';
 import Home from './Home';
 import Privacy from './privacy';
 import Login from './Login';
+import ForgotPassword from './ForgotPassword';
+import ResetPassword from './ResetPassword';
 
 import Dashboard from './Dashboard';
 import Onboarding from './Onboarding';
@@ -55,6 +57,8 @@ export default function Pages() {
         <Route path="/index" element={<Home />} />
         <Route path="/privacy" element={<Privacy />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/clientportal" element={<ClientPortal />} />
         <Route path="/publicprojectview/:id" element={<PublicProjectView />} />
         <Route path="/proposalpdf" element={<ProposalPDF />} />

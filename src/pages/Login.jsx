@@ -162,7 +162,14 @@ export default function Login() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="password">Κωδικός</Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Κωδικός</Label>
+                  {mode === 'login' && (
+                    <Link to="/forgot-password" className="text-xs text-blue-600 hover:underline">
+                      Ξέχασα τον κωδικό;
+                    </Link>
+                  )}
+                </div>
                 <Input
                   id="password"
                   type="password"
