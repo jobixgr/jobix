@@ -72,7 +72,7 @@ export default async function handler(req, res) {
     if (action === 'register' && req.method === 'POST') {
       // Προστασία: max 5 εγγραφές ανά IP / ώρα
       if (await enforceRateLimit(req, res, { name: 'register', identifier: clientIp(req), limit: 5, windowSec: 3600 })) return;
-      const { email, password, full_name } = await readJson(req);
+      const { email, password, full_name, origin } = await readJson(req);
       if (!email || !password || password.length < 8) {
         return send(res, 400, { error: 'Απαιτείται email και κωδικός τουλάχιστον 8 χαρακτήρων.' });
       }
@@ -81,13 +81,27 @@ export default async function handler(req, res) {
       if (existing && existing.length) {
         return send(res, 409, { error: 'Υπάρχει ήδη λογαριασμός με αυτό το email.' });
       }
+      const verifyToken = crypto.randomBytes(32).toString('hex');
       const user = await supa.insert('app_users', {
         email: normalized,
         password: hashPassword(password),
         full_name: full_name || '',
         role: 'user',
         organization_id: null,
+        email_verified: false,
+        verify_token: verifyToken,
       });
+      // Στείλε email επιβεβαίωσης (δεν μπλοκάρει την εγγραφή αν αποτύχει).
+      try {
+        const verifyLink = `${req.headers.origin || origin || ''}/verify-email?token=${verifyToken}`;
+        await sendEmail({
+          to: normalized,
+          subject: 'Επιβεβαίωση email — Jobix',
+          body: `Καλώς ήρθατε στο Jobix!\n\nΠατήστε τον παρακάτω σύνδεσμο για να επιβεβαιώσετε το email σας:\n\n${verifyLink}\n\nΑν δεν δημιουργήσατε εσείς λογαριασμό, αγνοήστε αυτό το email.\n\nΜε εκτίμηση,\nJobix`,
+        });
+      } catch (e) {
+        console.error('verify email send error:', e);
+      }
       const token = signToken({ sub: user.id });
       return send(res, 200, { token, user: publicUser(user) });
     }
@@ -125,6 +139,7 @@ export default async function handler(req, res) {
           full_name: gData.name || '',
           role: 'user',
           organization_id: null,
+          email_verified: true,  // η Google εγγυάται το email
         });
       }
       const token = signToken({ sub: user.id });
@@ -196,6 +211,43 @@ export default async function handler(req, res) {
         updated_date: now(),
       });
       return send(res, 200, { ok: true, message: 'Ο κωδικός άλλαξε. Μπορείτε τώρα να συνδεθείτε.' });
+    }
+
+    // ---------- VERIFY EMAIL (με το token από το email) ----------
+    if (action === 'verify-email' && req.method === 'POST') {
+      const { token } = await readJson(req);
+      if (!token) return send(res, 400, { error: 'Λείπει το token.' });
+      const user = first(await supa.select('app_users', { verify_token: `eq.${token}` }));
+      if (!user) return send(res, 400, { error: 'Ο σύνδεσμος επιβεβαίωσης είναι άκυρος ή έχει ήδη χρησιμοποιηθεί.' });
+      await supa.update('app_users', user.id, {
+        email_verified: true,
+        verify_token: null,
+        updated_date: now(),
+      });
+      return send(res, 200, { ok: true, message: 'Το email επιβεβαιώθηκε!' });
+    }
+
+    // ---------- RESEND VERIFICATION (ξαναστέλνει το email) ----------
+    if (action === 'resend-verification' && req.method === 'POST') {
+      const user = await getUserFromReq(req);
+      if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
+      if (await enforceRateLimit(req, res, { name: 'resend-verify', identifier: user.id, limit: 3, windowSec: 900 })) return;
+      if (user.email_verified) return send(res, 200, { ok: true, message: 'Το email είναι ήδη επιβεβαιωμένο.' });
+      const verifyToken = crypto.randomBytes(32).toString('hex');
+      await supa.update('app_users', user.id, { verify_token: verifyToken });
+      const { origin } = await readJson(req).catch(() => ({}));
+      try {
+        const verifyLink = `${req.headers.origin || origin || ''}/verify-email?token=${verifyToken}`;
+        await sendEmail({
+          to: user.email,
+          subject: 'Επιβεβαίωση email — Jobix',
+          body: `Πατήστε τον παρακάτω σύνδεσμο για να επιβεβαιώσετε το email σας:\n\n${verifyLink}\n\nΜε εκτίμηση,\nJobix`,
+        });
+      } catch (e) {
+        console.error('resend verify error:', e);
+        return send(res, 502, { error: 'Αποτυχία αποστολής email.' });
+      }
+      return send(res, 200, { ok: true, message: 'Στάλθηκε νέο email επιβεβαίωσης.' });
     }
 
     // ---------- ME ----------

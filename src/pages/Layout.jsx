@@ -37,6 +37,7 @@ import {
 import { Button } from "@/components/ui/button";
 import PWAInstallPrompt from "@/components/PWAInstallPrompt";
 import TrialStatusBanner from "@/components/TrialStatusBanner";
+import EmailVerificationBanner from "@/components/EmailVerificationBanner";
 import PushNotificationManager from "@/components/notifications/PushNotificationManager";
 
 import { User, Organization } from "@/api/entities";
@@ -451,6 +452,7 @@ export default function Layout({ children, currentPageName }) {
               </header>
 
               <div className="w-full pwa-safe-area">
+                <EmailVerificationBanner />
                 <TrialStatusBanner />
                 {children}
               </div>

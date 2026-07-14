@@ -80,10 +80,20 @@ export const User = {
     body: { newEmail, currentPassword },
   }),
 
+  verifyEmail: (token) => apiFetch('/api/auth/verify-email', {
+    method: 'POST',
+    body: { token },
+  }),
+
+  resendVerification: () => apiFetch('/api/auth/resend-verification', {
+    method: 'POST',
+    body: { origin: window.location.origin },
+  }),
+
   register: async (email, password, full_name) => {
     const { token, user } = await apiFetch('/api/auth/register', {
       method: 'POST',
-      body: { email, password, full_name },
+      body: { email, password, full_name, origin: window.location.origin },
     });
     setToken(token);
     return user;

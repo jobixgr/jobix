@@ -10,6 +10,7 @@ import Privacy from './privacy';
 import Login from './Login';
 import ForgotPassword from './ForgotPassword';
 import ResetPassword from './ResetPassword';
+import VerifyEmail from './VerifyEmail';
 
 import Dashboard from './Dashboard';
 import Onboarding from './Onboarding';
@@ -59,6 +60,7 @@ export default function Pages() {
         <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ResetPassword />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/clientportal" element={<ClientPortal />} />
         <Route path="/publicprojectview/:id" element={<PublicProjectView />} />
         <Route path="/proposalpdf" element={<ProposalPDF />} />
