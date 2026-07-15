@@ -189,10 +189,22 @@ export async function getUserFromReq(req) {
   return rows && rows[0] ? rows[0] : null;
 }
 
+// Επιστρέφει ΜΟΝΟ τα πεδία που επιτρέπεται να δει ο client (allowlist).
+// ΑΣΦΑΛΕΙΑ: με denylist ({password, ...rest}) διέρρεαν reset_token/verify_token,
+// που επιτρέπουν αλλαγή κωδικού / επιβεβαίωση email. Ποτέ ξανά.
+const USER_PUBLIC_FIELDS = [
+  'id', 'email', 'full_name', 'phone', 'position',
+  'role', 'organization_id', 'email_verified',
+  'created_date', 'updated_date',
+];
+
 export function publicUser(u) {
   if (!u) return null;
-  const { password, ...rest } = u;
-  return rest;
+  const out = {};
+  for (const f of USER_PUBLIC_FIELDS) {
+    if (u[f] !== undefined) out[f] = u[f];
+  }
+  return out;
 }
 
 export const isAdmin = (u) => u && u.role === 'super_admin';

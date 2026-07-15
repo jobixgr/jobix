@@ -14,6 +14,23 @@ const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE;
 const BUCKET = process.env.SUPABASE_BUCKET || 'jobix-uploads';
 
+// ΑΣΦΑΛΕΙΑ: η βάση για ΟΛΑ τα links που στέλνονται με email.
+// ΠΟΤΕ δεν παίρνεται από τον χρήστη (req.headers.origin ή body.origin) — αλλιώς
+// επιτιθέμενος θα μπορούσε να στείλει origin=evil.com και να κλέψει reset tokens.
+// Παίρνει το πρώτο από το ALLOWED_ORIGINS, ή το APP_URL αν οριστεί ρητά.
+const APP_URL = (() => {
+  const explicit = process.env.APP_URL;
+  if (explicit) return explicit.replace(/\/$/, '');
+  const first = (process.env.ALLOWED_ORIGINS || '').split(',')[0].trim();
+  if (first) return first.replace(/\/$/, '');
+  const isProd = process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production';
+  if (isProd) {
+    console.error('ΠΡΟΣΟΧΗ: δεν ορίστηκε APP_URL/ALLOWED_ORIGINS — τα email links θα είναι σπασμένα.');
+    return '';
+  }
+  return 'http://localhost:5173';
+})();
+
 async function ensureProposalLink(proposalId, orgId, createdBy) {
   const existing = (await supa.select('proposal_links', { 'data->>proposal_id': `eq.${proposalId}` })).map(toClient);
   if (existing.length) return existing[0];
@@ -72,7 +89,7 @@ export default async function handler(req, res) {
     if (action === 'register' && req.method === 'POST') {
       // Προστασία: max 5 εγγραφές ανά IP / ώρα
       if (await enforceRateLimit(req, res, { name: 'register', identifier: clientIp(req), limit: 5, windowSec: 3600 })) return;
-      const { email, password, full_name, origin } = await readJson(req);
+      const { email, password, full_name } = await readJson(req);
       if (!email || !password || password.length < 8) {
         return send(res, 400, { error: 'Απαιτείται email και κωδικός τουλάχιστον 8 χαρακτήρων.' });
       }
@@ -93,7 +110,7 @@ export default async function handler(req, res) {
       });
       // Στείλε email επιβεβαίωσης (δεν μπλοκάρει την εγγραφή αν αποτύχει).
       try {
-        const verifyLink = `${req.headers.origin || origin || ''}/verify-email?token=${verifyToken}`;
+        const verifyLink = `${APP_URL}/verify-email?token=${verifyToken}`;
         await sendEmail({
           to: normalized,
           subject: 'Επιβεβαίωση email — Jobix',
@@ -171,7 +188,7 @@ export default async function handler(req, res) {
     if (action === 'forgot-password' && req.method === 'POST') {
       // Προστασία: max 5 αιτήματα ανά IP / 15 λεπτά
       if (await enforceRateLimit(req, res, { name: 'forgot-pw', identifier: clientIp(req), limit: 5, windowSec: 900 })) return;
-      const { email, origin } = await readJson(req);
+      const { email } = await readJson(req);
       const normalized = String(email || '').trim().toLowerCase();
       // Για ασφάλεια, ΠΑΝΤΑ επιστρέφουμε ok (να μην αποκαλύπτουμε ποια emails υπάρχουν).
       const user = first(await supa.select('app_users', { email: `eq.${normalized}` }));
@@ -179,7 +196,7 @@ export default async function handler(req, res) {
         const token = crypto.randomBytes(32).toString('hex');
         const expires = new Date(Date.now() + 60 * 60 * 1000).toISOString(); // 1 ώρα
         await supa.update('app_users', user.id, { reset_token: token, reset_expires: expires });
-        const link = `${origin || ''}/reset-password?token=${token}`;
+        const link = `${APP_URL}/reset-password?token=${token}`;
         try {
           await sendEmail({
             to: normalized,
@@ -235,9 +252,8 @@ export default async function handler(req, res) {
       if (user.email_verified) return send(res, 200, { ok: true, message: 'Το email είναι ήδη επιβεβαιωμένο.' });
       const verifyToken = crypto.randomBytes(32).toString('hex');
       await supa.update('app_users', user.id, { verify_token: verifyToken });
-      const { origin } = await readJson(req).catch(() => ({}));
       try {
-        const verifyLink = `${req.headers.origin || origin || ''}/verify-email?token=${verifyToken}`;
+        const verifyLink = `${APP_URL}/verify-email?token=${verifyToken}`;
         await sendEmail({
           to: user.email,
           subject: 'Επιβεβαίωση email — Jobix',
@@ -379,17 +395,22 @@ export default async function handler(req, res) {
     // ---------- QUERY ----------
     if (req.method === 'POST' && tail === 'query') {
       const body = await readJson(req);
-      const filters = { ...orgFilter() };
-      // where: ισότητες πάνω σε δυναμικά πεδία (data->>key) ή σταθερά
+      const filters = {};
+      // where: ισότητες πάνω σε δυναμικά πεδία (data->>key) ή σταθερά.
+      // ΑΣΦΑΛΕΙΑ: το organization_id ΔΕΝ επιτρέπεται από τον χρήστη — αλλιώς
+      // θα μπορούσε να δει δεδομένα άλλου οργανισμού (data leak).
       if (body.where) {
         for (const [k, v] of Object.entries(body.where)) {
-          if (['id', 'organization_id', 'created_by'].includes(k)) {
+          if (k === 'organization_id') continue;  // αγνοείται πάντα
+          if (['id', 'created_by'].includes(k)) {
             filters[k] = `eq.${v}`;
           } else {
             filters[`data->>${k}`] = `eq.${v}`;
           }
         }
       }
+      // Το φίλτρο ασφαλείας μπαίνει ΤΕΛΕΥΤΑΙΟ ώστε να μην μπορεί να αντικατασταθεί.
+      Object.assign(filters, orgFilter());
       let order;
       if (body.sort) {
         const desc = body.sort.startsWith('-');
@@ -648,7 +669,7 @@ export default async function handler(req, res) {
       if (!client?.email) return send(res, 400, { error: 'Ο πελάτης δεν έχει καταχωρημένο email.' });
       const org = toClient(first(await supa.select('organizations', { id: `eq.${proposal.organization_id}` })));
       const link = await ensureProposalLink(proposal.id, proposal.organization_id, proposal.created_by);
-      const publicUrl = `${body.origin || ''}/proposalpdf?token=${link.token}`;
+      const publicUrl = `${APP_URL}/proposalpdf?token=${link.token}`;
 
       const result = await sendEmail({
         to: client.email,
