@@ -44,6 +44,11 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
         setAppointment(prev => ({ ...prev, [name]: value }));
     };
 
+    // Σημερινή ημερομηνία σε μορφή yyyy-MM-dd (τοπική ώρα, όχι UTC).
+    const todayStr = format(new Date(), 'yyyy-MM-dd');
+    // Αν η επιλεγμένη ημερομηνία είναι σήμερα, η ώρα δεν μπορεί να είναι στο παρελθόν.
+    const minTimeForToday = appointment.date === todayStr ? format(new Date(), 'HH:mm') : undefined;
+
     const resetForm = () => {
          setAppointment({
             name: '',
@@ -62,6 +67,19 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
             toast({
                 title: "Σφάλμα",
                 description: "Το όνομα και η ημερομηνία είναι υποχρεωτικά.",
+                variant: "destructive"
+            });
+            return;
+        }
+
+        // Έλεγχος ότι το ραντεβού δεν είναι στο παρελθόν (μόνο για νέα ραντεβού —
+        // ένα υπάρχον παλιό ραντεβού πρέπει να μπορεί να επεξεργαστεί/διορθωθεί).
+        const timeToCheck = appointment.time || '09:00';
+        const chosen = new Date(`${appointment.date}T${timeToCheck}:00`);
+        if (!existingAppointment && chosen.getTime() < Date.now()) {
+            toast({
+                title: "Μη έγκυρη ώρα",
+                description: "Δεν μπορείτε να κλείσετε ραντεβού σε ώρα που έχει ήδη περάσει.",
                 variant: "destructive"
             });
             return;
@@ -132,7 +150,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="max-w-lg">
+            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         {existingAppointment ? (
@@ -192,6 +210,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                                 id="date"
                                 name="date"
                                 type="date"
+                                min={existingAppointment ? undefined : todayStr}
                                 value={appointment.date}
                                 onChange={handleInputChange}
                                 required
@@ -203,6 +222,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                                 id="time"
                                 name="time"
                                 type="time"
+                                min={existingAppointment ? undefined : minTimeForToday}
                                 value={appointment.time}
                                 onChange={handleInputChange}
                             />
@@ -221,11 +241,11 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                         />
                     </div>
 
-                    <DialogFooter className="mt-6">
-                        <Button type="button" variant="outline" onClick={handleClose}>
+                    <DialogFooter className="mt-6 flex-col-reverse sm:flex-row gap-2 sm:gap-0">
+                        <Button type="button" variant="outline" onClick={handleClose} className="w-full sm:w-auto">
                             Άκυρο
                         </Button>
-                        <Button type="submit" disabled={isLoading} className="gradient-bg text-white">
+                        <Button type="submit" disabled={isLoading} className="gradient-bg text-white w-full sm:w-auto">
                             {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                             {existingAppointment ? 'Ενημέρωση' : 'Δημιουργία'} Ραντεβού
                         </Button>

@@ -12,7 +12,7 @@ export default function QuickActions() {
       title: "Νέα Προσφορά",
       description: "Δημιούργησε προσφορά για πελάτη",
       icon: FileText,
-      url: createPageUrl("Proposals", "new"),
+      url: createPageUrl("ProposalNew"),
       color: "from-blue-500 to-indigo-600", // Changed from purple
       bgColor: "bg-blue-50",             // Changed from purple
       textColor: "text-blue-600"          // Changed from purple
@@ -21,7 +21,7 @@ export default function QuickActions() {
       title: "Νέο Έργο", 
       description: "Ξεκίνα νέο έργο από την αρχή",
       icon: FolderKanban,
-      url: createPageUrl("Projects", "new"),
+      url: createPageUrl("ProjectNew"),
       color: "from-sky-500 to-blue-600",
       bgColor: "bg-sky-50",
       textColor: "text-sky-600"
@@ -30,7 +30,7 @@ export default function QuickActions() {
       title: "Νέος Πελάτης",
       description: "Πρόσθεσε νέο πελάτη",
       icon: Users,
-      url: createPageUrl("Clients", "new"),
+      url: createPageUrl("ClientNew"),
       color: "from-emerald-500 to-green-600", 
       bgColor: "bg-emerald-50",
       textColor: "text-emerald-600"
