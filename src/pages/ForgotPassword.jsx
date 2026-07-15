@@ -30,12 +30,7 @@ export default function ForgotPassword() {
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-slate-50 p-4">
-      <div className="flex items-center gap-2 mb-8">
-        <div className="w-10 h-10 gradient-bg rounded-xl flex items-center justify-center">
-          <span className="text-white font-bold text-lg">J</span>
-        </div>
-        <span className="text-2xl font-bold text-slate-900">Jobix</span>
-      </div>
+      <img src="/logo.png" alt="Jobix" className="h-10 w-auto mb-8" />
 
       <Card className="w-full max-w-md">
         <CardHeader className="text-center">

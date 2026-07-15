@@ -99,9 +99,7 @@ export default function ClientPortal() {
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
         <Card className="w-full max-w-md bg-white/80 backdrop-blur-sm shadow-xl">
           <CardHeader className="text-center">
-            <div className="w-16 h-16 mx-auto mb-4 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <span className="text-2xl font-bold text-white">J</span>
-            </div>
+            <img src="/logo.png" alt="Jobix" className="h-9 w-auto mx-auto mb-4" />
             <CardTitle className="text-xl font-bold text-slate-900">Πύλη Πελατών</CardTitle>
             <p className="text-sm text-slate-600">Εισάγετε τον κωδικό πρόσβασης που λάβατε</p>
           </CardHeader>
@@ -137,9 +135,7 @@ export default function ClientPortal() {
       <header className="bg-white/80 backdrop-blur-sm border-b border-slate-200 p-4">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-              <span className="text-lg font-bold text-white">J</span>
-            </div>
+            <img src="/logo.png" alt="Jobix" className="h-8 w-auto" />
             <div>
               <h1 className="text-lg font-bold text-slate-900">Πύλη Πελατών</h1>
               <p className="text-sm text-slate-600">Καλώς ήρθατε, {client?.name}</p>

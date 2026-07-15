@@ -55,7 +55,7 @@ const NotificationManager = () => {
                             const formattedTime = format(appointmentDate, 'HH:mm');
                             new Notification('Υπενθύμιση Ραντεβού', {
                                 body: `Το ραντεβού σας με "${appt.name}" είναι στις ${formattedTime}!`,
-                                icon: '/logo.svg' // App logo
+                                icon: '/icon-192.png' // App logo
                             });
                         }, delay);
 

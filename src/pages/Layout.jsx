@@ -353,7 +353,7 @@ export default function Layout({ children, currentPageName }) {
             <Sidebar className="premium-sidebar">
               <SidebarHeader className="p-4 border-b border-slate-100">
                 <div className="flex items-center gap-3">
-                  <img src="/logo.svg" alt="Jobix Logo" className="h-10 w-auto" />
+                  <img src="/logo.png" alt="Jobix Logo" className="h-10 w-auto" />
                 </div>
               </SidebarHeader>
 
@@ -429,7 +429,7 @@ export default function Layout({ children, currentPageName }) {
               <header className="p-4 border-b bg-white/50 backdrop-blur-sm lg:hidden pwa-safe-area pwa-standalone">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <img src="/logo.svg" alt="Jobix Logo" className="h-7 w-auto" />
+                    <img src="/logo.png" alt="Jobix Logo" className="h-7 w-auto" />
                   </div>
                   <div className="flex items-center gap-2">
                     {user && (

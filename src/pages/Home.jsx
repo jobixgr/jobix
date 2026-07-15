@@ -76,12 +76,7 @@ export default function HomePage() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-md">
-                <span className="text-xl font-bold text-white">J</span>
-              </div>
-              <h1 className="text-2xl font-bold text-slate-800">
-                Jobix
-              </h1>
+              <img src="/logo.png" alt="Jobix" className="h-8 w-auto" />
             </div>
             <div className="flex items-center space-x-4">
               <Button
@@ -291,11 +286,8 @@ export default function HomePage() {
       <footer className="bg-slate-900 text-white py-16">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center">
-            <div className="flex items-center justify-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-xl flex items-center justify-center shadow-lg">
-                <span className="text-2xl font-bold text-white">J</span>
-              </div>
-              <h3 className="text-3xl font-bold">Jobix</h3>
+            <div className="flex items-center justify-center mb-8">
+              <img src="/logo-white.png" alt="Jobix" className="h-10 w-auto" />
             </div>
             <p className="text-slate-400 mb-8 max-w-md mx-auto">
               Το καλύτερο εργαλείο για μάστορες και τεχνίτες που θέλουν να οργανώσουν και να αναπτύξουν την επιχείρησή τους.

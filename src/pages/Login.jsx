@@ -107,11 +107,8 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-center justify-center p-4">
       <div className="w-full max-w-md">
-        <Link to="/" className="flex items-center justify-center gap-3 mb-8">
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 flex items-center justify-center shadow-lg">
-            <span className="text-xl font-bold text-white">J</span>
-          </div>
-          <span className="text-2xl font-bold text-slate-900">Jobix</span>
+        <Link to="/" className="flex items-center justify-center mb-8">
+          <img src="/logo.png" alt="Jobix" className="h-10 w-auto" />
         </Link>
 
         <Card className="bg-white/80 backdrop-blur-sm border-slate-200 shadow-xl">

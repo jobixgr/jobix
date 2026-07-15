@@ -107,3 +107,16 @@ $$;
 
 -- Καθάρισμα παλιών εγγραφών (τρέξε περιοδικά ή αγνόησέ το — δεν πειράζει να μαζεύονται).
 -- delete from rate_limits where window_start < now() - interval '1 day';
+
+-- ============================================================
+-- Password reset + Email verification (account management)
+-- Τρέξε ΚΑΙ αυτό στο Supabase SQL Editor (πάνω από ό,τι ήδη έτρεξες).
+-- Έχει "if not exists", οπότε δεν χαλάει τίποτα αν ξανατρέξει.
+-- ============================================================
+alter table app_users add column if not exists reset_token text;
+alter table app_users add column if not exists reset_expires timestamptz;
+alter table app_users add column if not exists email_verified boolean default false;
+alter table app_users add column if not exists verify_token text;
+
+create index if not exists idx_app_users_reset_token on app_users (reset_token);
+create index if not exists idx_app_users_verify_token on app_users (verify_token);

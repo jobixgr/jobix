@@ -1,0 +1,31 @@
+{
+  "name": "Jobix — Διαχείριση για τεχνίτες & εργολάβους",
+  "short_name": "Jobix",
+  "description": "Διαχείριση προσφορών, έργων και πληρωμών για τεχνίτες και εργολάβους.",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#09111E",
+  "theme_color": "#09111E",
+  "orientation": "portrait-primary",
+  "lang": "el",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
