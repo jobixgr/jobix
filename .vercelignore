@@ -1,6 +1,3 @@
-server/data
-server/outbox
-server/uploads
 node_modules
 .env
 *.log

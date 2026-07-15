@@ -29,12 +29,16 @@ export default function Login() {
   }, []);
 
   const afterAuth = (user) => {
-    const next = searchParams.get('next');
-    if (next && next.startsWith('/')) {
-      navigate(next, { replace: true });
-    } else {
-      navigate(user.organization_id ? '/dashboard' : '/onboarding', { replace: true });
+    // ΠΡΟΤΕΡΑΙΟΤΗΤΑ: αν ο χρήστης δεν έχει οργανισμό, πάει ΠΑΝΤΑ στο onboarding.
+    if (!user.organization_id) {
+      navigate('/onboarding', { replace: true });
+      return;
     }
+    // Έχει οργανισμό: ακολούθησε το "next" — εκτός αν είναι ξεπερασμένο
+    // (π.χ. ήρθε από το κουμπί εγγραφής με next=/onboarding αλλά έκανε login).
+    const next = searchParams.get('next');
+    const isStale = !next || !next.startsWith('/') || next.toLowerCase().startsWith('/onboarding');
+    navigate(isStale ? '/dashboard' : next, { replace: true });
   };
 
   const handleSubmit = async (e) => {

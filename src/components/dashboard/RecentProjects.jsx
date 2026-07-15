@@ -3,7 +3,7 @@ import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { FolderKanban, ArrowRight, Calendar, User } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -25,6 +25,7 @@ const statusLabels = {
 };
 
 export default function RecentProjects({ projects, isLoading }) {
+  const navigate = useNavigate();
   if (isLoading) {
     return (
       <Card className="bg-white/70 backdrop-blur-sm border-slate-200 shadow-lg">
@@ -84,7 +85,7 @@ export default function RecentProjects({ projects, isLoading }) {
               <div
                 key={project.id}
                 className="flex items-center justify-between p-3 border border-slate-100 rounded-lg hover:bg-slate-50 transition-colors group cursor-pointer"
-                onClick={() => window.location.href = createPageUrl("ProjectView", project.id)}
+                onClick={() => navigate(createPageUrl("ProjectView", project.id))}
               >
                 <div className="flex-1 min-w-0">
                   <h3 className="font-semibold text-slate-900 mb-1 group-hover:text-purple-600 transition-colors">

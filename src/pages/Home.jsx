@@ -25,8 +25,12 @@ export default function HomePage() {
   // Αν ο χρήστης είναι ήδη συνδεδεμένος, πήγαινε κατευθείαν στο Dashboard.
   useEffect(() => {
     User.me()
-      .then(() => { window.location.href = createPageUrl('Dashboard'); })
+      .then((u) => {
+        // Χωρίς οργανισμό → onboarding, αλλιώς dashboard.
+        navigate(u.organization_id ? createPageUrl('Dashboard') : '/onboarding', { replace: true });
+      })
       .catch(() => { /* μη συνδεδεμένος — μένουμε στη landing */ });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleLogin = () => {

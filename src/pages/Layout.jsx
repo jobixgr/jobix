@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   LayoutDashboard,
@@ -127,6 +127,7 @@ const publicPages = ['index', 'privacy'];
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [organization, setOrganization] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -168,7 +169,7 @@ export default function Layout({ children, currentPageName }) {
           try {
             const currentUser = await fetchUser();
             if (currentUser) {
-              window.location.href = createPageUrl('Dashboard');
+              navigate(createPageUrl('Dashboard'), { replace: true });
               return; // Stop execution
             }
           } catch (e) {
@@ -187,18 +188,18 @@ export default function Layout({ children, currentPageName }) {
 
         if (!currentUser) {
           // USER IS NOT LOGGED IN - redirect to /login as requested.
-          window.location.href = '/login';
+          navigate('/login', { replace: true });
           return;
         }
 
         // USER IS LOGGED IN - proceed with app logic
         if (currentUser && !currentUser.organization_id && currentPageName !== 'Onboarding') {
-          window.location.href = createPageUrl('Onboarding');
+          navigate(createPageUrl('Onboarding'), { replace: true });
           return;
         }
         
         if (currentUser?.role === 'super_admin' && currentPageName !== 'admindashboard') {
-          window.location.href = createPageUrl('admindashboard');
+          navigate(createPageUrl('admindashboard'), { replace: true });
           return;
         }
         
@@ -210,7 +211,7 @@ export default function Layout({ children, currentPageName }) {
       } catch (error) {
         // Any auth error also redirects to login page for protected routes.
         console.error("Auth error on protected route:", error);
-        window.location.href = '/login';
+        navigate('/login', { replace: true });
         return;
       } finally {
         setIsLoading(false);
