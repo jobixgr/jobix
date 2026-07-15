@@ -49,6 +49,15 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
     // Αν η επιλεγμένη ημερομηνία είναι σήμερα, η ώρα δεν μπορεί να είναι στο παρελθόν.
     const minTimeForToday = appointment.date === todayStr ? format(new Date(), 'HH:mm') : undefined;
 
+    // Γρήγορες επιλογές ώρας. Αν είναι σήμερα, κρύβει όσες έχουν ήδη περάσει
+    // ώστε ο χρήστης να μη διαλέξει άκυρη ώρα.
+    const quickTimes = React.useMemo(() => {
+        const all = ['08:00','09:00','10:00','11:00','12:00','14:00','16:00','18:00'];
+        if (appointment.date !== todayStr || existingAppointment) return all;
+        const nowHM = format(new Date(), 'HH:mm');
+        return all.filter(t => t > nowHM);
+    }, [appointment.date, todayStr, existingAppointment]);
+
     const resetForm = () => {
          setAppointment({
             name: '',
@@ -150,7 +159,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
 
     return (
         <Dialog open={open} onOpenChange={handleClose}>
-            <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto w-[calc(100vw-2rem)] sm:w-full">
+            <DialogContent className="sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         {existingAppointment ? (
@@ -172,6 +181,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                         <Input
                             id="name"
                             name="name"
+                            className="h-11"
                             value={appointment.name}
                             onChange={handleInputChange}
                             placeholder="π.χ. Νίκος Γεωργίου"
@@ -185,6 +195,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                             <Input
                                 id="phone"
                                 name="phone"
+                                className="h-11"
                                 type="tel"
                                 value={appointment.phone}
                                 onChange={handleInputChange}
@@ -196,6 +207,7 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                             <Input
                                 id="address"
                                 name="address"
+                                className="h-11"
                                 value={appointment.address}
                                 onChange={handleInputChange}
                                 placeholder="π.χ. Αριστοτέλους 15, Αθήνα"
@@ -203,13 +215,14 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 gap-3">
                          <div className="space-y-2">
                             <Label htmlFor="date">Ημερομηνία *</Label>
                             <Input
                                 id="date"
                                 name="date"
                                 type="date"
+                                className="h-11"
                                 min={existingAppointment ? undefined : todayStr}
                                 value={appointment.date}
                                 onChange={handleInputChange}
@@ -222,11 +235,30 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                                 id="time"
                                 name="time"
                                 type="time"
+                                className="h-11"
                                 min={existingAppointment ? undefined : minTimeForToday}
                                 value={appointment.time}
                                 onChange={handleInputChange}
                             />
                         </div>
+                    </div>
+
+                    {/* Γρήγορες επιλογές ώρας — για να μη χρειάζεται το picker του κινητού */}
+                    <div className="flex flex-wrap gap-2">
+                        {quickTimes.map(t => (
+                            <button
+                                key={t}
+                                type="button"
+                                onClick={() => setAppointment(prev => ({ ...prev, time: t }))}
+                                className={`px-3 py-1.5 rounded-full text-sm border transition-colors ${
+                                    appointment.time === t
+                                        ? 'bg-blue-600 text-white border-blue-600'
+                                        : 'bg-white text-slate-600 border-slate-200 hover:border-blue-400'
+                                }`}
+                            >
+                                {t}
+                            </button>
+                        ))}
                     </div>
                    
                     <div className="space-y-2">
@@ -241,11 +273,11 @@ export default function NewAppointmentDialog({ open, onClose, onAppointmentCreat
                         />
                     </div>
 
-                    <DialogFooter className="mt-6 flex-col-reverse sm:flex-row gap-2 sm:gap-0">
-                        <Button type="button" variant="outline" onClick={handleClose} className="w-full sm:w-auto">
+                    <DialogFooter className="mt-4">
+                        <Button type="button" variant="outline" onClick={handleClose}>
                             Άκυρο
                         </Button>
-                        <Button type="submit" disabled={isLoading} className="gradient-bg text-white w-full sm:w-auto">
+                        <Button type="submit" disabled={isLoading} className="gradient-bg text-white">
                             {isLoading ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
                             {existingAppointment ? 'Ενημέρωση' : 'Δημιουργία'} Ραντεβού
                         </Button>
