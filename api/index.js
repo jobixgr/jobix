@@ -745,6 +745,65 @@ export default async function handler(req, res) {
 
     // Επιστρέφει (ή δημιουργεί) τον δημόσιο σύνδεσμο του έργου.
     // Μόνο ο ιδιοκτήτης μπορεί να τον πάρει — ο σύνδεσμος περιέχει token, όχι το id.
+    // ============ JOBIX CARE ============
+
+    // Ενεργοποίηση συμβολαίου: δημιουργεί ΑΤΟΜΙΚΑ όλες τις επισκέψεις.
+    if (action === 'activateCareContract') {
+      const row = first(await supa.select('care_contracts', { id: `eq.${body.contractId}` }));
+      if (!row || !owns(user, row)) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+
+      let result;
+      try {
+        result = await rpc('activate_care_contract', { p_contract_id: row.id });
+      } catch (e) {
+        console.error('activate_care_contract RPC error:', e);
+        return send(res, 500, { error: 'Η ενεργοποίηση δεν ολοκληρώθηκε. Δεν έγινε καμία αλλαγή.' });
+      }
+      if (!result?.ok) return send(res, 400, { error: 'Η ενεργοποίηση απέτυχε.', detail: result?.error });
+      return send(res, 200, result);
+    }
+
+    // Δημόσιος σύνδεσμος αποδοχής συμβολαίου (token, όχι UUID).
+    if (action === 'getCareShareLink') {
+      const row = first(await supa.select('care_contracts', { id: `eq.${body.contractId}` }));
+      if (!row || !owns(user, row)) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+      const existing = (await supa.select('care_links', { 'data->>contract_id': `eq.${row.id}` })).map(toClient);
+      let link = existing[0];
+      if (!link) {
+        link = toClient(await supa.insert('care_links', {
+          organization_id: row.organization_id,
+          created_by: row.created_by || 'system',
+          data: { contract_id: row.id, token: crypto.randomUUID() },
+        }));
+      }
+      return send(res, 200, { url: `${APP_URL}/care?token=${link.token}`, token: link.token });
+    }
+
+    // Ολοκλήρωση επίσκεψης: μετράει και το υπόλοιπο του συμβολαίου.
+    if (action === 'completeCareVisit') {
+      const visitRow = first(await supa.select('care_visits', { id: `eq.${body.visitId}` }));
+      if (!visitRow || !owns(user, visitRow)) return send(res, 404, { error: 'Η επίσκεψη δεν βρέθηκε.' });
+      const v = toClient(visitRow);
+      if (v.status === 'completed') return send(res, 409, { error: 'Η επίσκεψη έχει ήδη ολοκληρωθεί.' });
+
+      await supa.update('care_visits', v.id, {
+        data: { ...(visitRow.data || {}), status: 'completed', completed_at: now(), notes: body.notes || v.notes || '' },
+        updated_date: now(),
+      });
+
+      // Ενημέρωση μετρητή στο συμβόλαιο
+      const cRow = first(await supa.select('care_contracts', { id: `eq.${v.contract_id}` }));
+      if (cRow) {
+        const done = (await supa.select('care_visits', { 'data->>contract_id': `eq.${v.contract_id}` }))
+          .map(toClient).filter((x) => x.status === 'completed').length;
+        await supa.update('care_contracts', cRow.id, {
+          data: { ...(cRow.data || {}), visits_completed: done },
+          updated_date: now(),
+        });
+      }
+      return send(res, 200, { ok: true });
+    }
+
     if (action === 'getProjectShareLink') {
       const projectRow = first(await supa.select('projects', { id: `eq.${body.projectId}` }));
       if (!projectRow || !owns(user, projectRow)) return send(res, 404, { error: 'Το έργο δεν βρέθηκε.' });

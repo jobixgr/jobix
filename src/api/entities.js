@@ -38,6 +38,12 @@ export const Appointment = makeEntity('Appointment');
 export const Expense = makeEntity('Expense');
 export const ClientAccess = makeEntity('ClientAccess');
 
+// --- Jobix Care (συμβόλαια συντήρησης) ---
+export const CarePlan = makeEntity('CarePlan');
+export const CareContract = makeEntity('CareContract');
+export const CareVisit = makeEntity('CareVisit');
+export const CareLink = makeEntity('CareLink');
+
 // Auth — συμβατό με τις κλήσεις που χρησιμοποιεί η εφαρμογή.
 // ---- Cache για το User.me() ----
 // ΠΡΟΒΛΗΜΑ: πολλά components (Layout, Dashboard, banners, notifications) καλούσαν

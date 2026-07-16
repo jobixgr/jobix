@@ -40,6 +40,7 @@ import AdminDashboard from './admindashboard';
 // Δημόσιες σελίδες (χωρίς Layout / χωρίς login)
 import ClientPortal from './ClientPortal';
 import PublicProjectView from './PublicProjectView';
+import Care from './Care';
 import ProposalPDF from './ProposalPDF';
 
 // Βοηθητικό: τυλίγει προστατευμένες σελίδες στο Layout με το σωστό currentPageName.
@@ -63,6 +64,7 @@ export default function Pages() {
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/clientportal" element={<ClientPortal />} />
         <Route path="/publicprojectview" element={<PublicProjectView />} />
+        <Route path="/care" element={<Care />} />
         <Route path="/proposalpdf" element={<ProposalPDF />} />
 
         {/* Προστατευμένες (μέσα στο Layout) */}

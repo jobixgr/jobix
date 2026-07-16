@@ -34,3 +34,17 @@ export const viewPublicProposal = (token) =>
 
 export const handleProposalResponse = (token, response) =>
   apiFetch('/api/public/proposal-response', { method: 'POST', body: { token, response } });
+
+// ---------- Jobix Care (συμβόλαια συντήρησης) ----------
+
+/** Ενεργοποιεί συμβόλαιο: δημιουργεί αυτόματα όλες τις επισκέψεις (atomic). */
+export const activateCareContract = ({ contractId }) =>
+  apiFetch('/api/functions/activateCareContract', { method: 'POST', body: { contractId } });
+
+/** Δημόσιος σύνδεσμος αποδοχής για τον πελάτη. */
+export const getCareShareLink = ({ contractId }) =>
+  apiFetch('/api/functions/getCareShareLink', { method: 'POST', body: { contractId } });
+
+/** Σημειώνει επίσκεψη ως ολοκληρωμένη + ενημερώνει το υπόλοιπο. */
+export const completeCareVisit = ({ visitId, notes }) =>
+  apiFetch('/api/functions/completeCareVisit', { method: 'POST', body: { visitId, notes } });

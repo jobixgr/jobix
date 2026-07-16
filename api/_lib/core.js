@@ -52,6 +52,11 @@ export const ENTITY_MAP = {
   Appointment: 'appointments',
   Expense: 'expenses',
   ClientAccess: 'client_access',
+  // Jobix Care — συμβόλαια συντήρησης
+  CarePlan: 'care_plans',
+  CareContract: 'care_contracts',
+  CareVisit: 'care_visits',
+  CareLink: 'care_links',
 };
 
 /* ---------------- JWT ---------------- */

@@ -5,6 +5,7 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import {
   LayoutDashboard,
+  ShieldCheck,
   FileText,
   FolderKanban,
   Users,
@@ -55,6 +56,13 @@ const navigationItems = [
     url: createPageUrl("Agenda"),
     icon: Calendar,
     gradient: "from-purple-500 to-purple-600",
+    category: "main"
+  },
+  {
+    title: "Jobix Care",
+    url: createPageUrl("Care"),
+    icon: ShieldCheck,
+    gradient: "from-cyan-500 to-blue-600",
     category: "main"
   },
   {

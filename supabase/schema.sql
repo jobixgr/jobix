@@ -282,3 +282,127 @@ update storage.buckets set public = false where id = 'jobix-uploads';
 insert into storage.buckets (id, name, public)
 values ('jobix-uploads', 'jobix-uploads', false)
 on conflict (id) do update set public = false;
+
+-- ============================================================
+-- JOBIX CARE — Συμβόλαια συντήρησης (Φάση 1)
+-- Τρέξε το στο Supabase SQL Editor.
+--
+-- ΤΙ ΛΥΝΕΙ: δίνει στον τεχνίτη επαναλαμβανόμενο έσοδο από υπάρχοντες πελάτες.
+--   care_plans     → τα πακέτα που πουλάει (ορίζονται ΜΙΑ φορά, ξαναχρησιμοποιούνται)
+--   care_contracts → πακέτο ανατεθειμένο σε συγκεκριμένο πελάτη
+--   care_visits    → κάθε προγραμματισμένη επίσκεψη του συμβολαίου
+--   care_links     → δημόσιο link αποδοχής (token, όχι UUID)
+-- ============================================================
+do $$
+declare t text;
+begin
+  foreach t in array array['care_plans','care_contracts','care_visits','care_links']
+  loop
+    execute format($f$
+      create table if not exists %I (
+        id uuid primary key default gen_random_uuid(),
+        organization_id uuid,
+        created_by text,
+        data jsonb not null default '{}'::jsonb,
+        created_date timestamptz default now(),
+        updated_date timestamptz default now()
+      );
+      create index if not exists %I on %I (organization_id);
+    $f$, t, 'idx_' || t || '_org', t);
+  end loop;
+end $$;
+
+-- Indexes για τα φίλτρα που χρησιμοποιούνται συχνά
+create index if not exists idx_care_contracts_client
+  on care_contracts ((data->>'client_id'));
+create index if not exists idx_care_contracts_status
+  on care_contracts ((data->>'status'));
+create index if not exists idx_care_contracts_end_date
+  on care_contracts ((data->>'end_date'));
+create index if not exists idx_care_visits_contract
+  on care_visits ((data->>'contract_id'));
+create index if not exists idx_care_visits_due
+  on care_visits ((data->>'due_date'));
+create index if not exists idx_care_visits_status
+  on care_visits ((data->>'status'));
+create index if not exists idx_care_links_token
+  on care_links ((data->>'token'));
+
+-- Ένα ενεργό link ανά συμβόλαιο
+create unique index if not exists idx_care_links_unique_contract
+  on care_links ((data->>'contract_id'));
+
+-- ------------------------------------------------------------
+-- Ενεργοποίηση συμβολαίου: δημιουργεί ΑΤΟΜΙΚΑ όλες τις επισκέψεις.
+-- Είτε δημιουργούνται όλες, είτε καμία (όπως το accept_proposal).
+-- Idempotent: αν ξανακληθεί, δεν διπλασιάζει τίποτα.
+-- ------------------------------------------------------------
+create or replace function activate_care_contract(p_contract_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_c          record;
+  v_data       jsonb;
+  v_visits     int;
+  v_months     int;
+  v_start      date;
+  v_interval   numeric;
+  v_i          int;
+  v_due        date;
+  v_existing   int;
+  v_created    int := 0;
+begin
+  select * into v_c from care_contracts where id = p_contract_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  v_data   := coalesce(v_c.data, '{}'::jsonb);
+  v_visits := greatest(coalesce((v_data->>'visits_total')::int, 1), 1);
+  v_months := greatest(coalesce((v_data->>'duration_months')::int, 12), 1);
+  v_start  := coalesce((v_data->>'start_date')::date, current_date);
+
+  -- Αν έχει ήδη επισκέψεις, μην ξαναδημιουργήσεις (idempotent).
+  select count(*) into v_existing from care_visits
+   where data->>'contract_id' = p_contract_id::text;
+  if v_existing > 0 then
+    update care_contracts
+       set data = v_data || jsonb_build_object('status','active'),
+           updated_date = now()
+     where id = p_contract_id;
+    return jsonb_build_object('ok', true, 'visits_created', 0, 'reused', true);
+  end if;
+
+  -- Κατανομή επισκέψεων στη διάρκεια:
+  -- 12 μήνες / 2 επισκέψεις → μήνας 0 και 6.  12/4 → 0, 3, 6, 9.
+  v_interval := v_months::numeric / v_visits::numeric;
+
+  for v_i in 1..v_visits loop
+    v_due := v_start + ((v_i - 1) * v_interval * 30.44)::int;  -- ~μήνας
+    insert into care_visits (organization_id, created_by, data)
+    values (v_c.organization_id, v_c.created_by, jsonb_build_object(
+      'contract_id', p_contract_id::text,
+      'client_id',   v_data->>'client_id',
+      'sequence',    v_i,
+      'due_date',    to_char(v_due, 'YYYY-MM-DD'),
+      'status',      'pending',
+      'title',       coalesce(v_data->>'plan_name', 'Επίσκεψη συντήρησης')
+                     || ' (' || v_i || '/' || v_visits || ')'
+    ));
+    v_created := v_created + 1;
+  end loop;
+
+  update care_contracts
+     set data = v_data || jsonb_build_object(
+           'status', 'active',
+           'activated_at', now()::text,
+           'end_date', to_char(v_start + (v_months * 30.44)::int, 'YYYY-MM-DD')
+         ),
+         updated_date = now()
+   where id = p_contract_id;
+
+  return jsonb_build_object('ok', true, 'visits_created', v_created, 'reused', false);
+end;
+$$;
