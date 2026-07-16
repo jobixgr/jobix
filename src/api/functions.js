@@ -48,3 +48,7 @@ export const getCareShareLink = ({ contractId }) =>
 /** Σημειώνει επίσκεψη ως ολοκληρωμένη + ενημερώνει το υπόλοιπο. */
 export const completeCareVisit = ({ visitId, notes }) =>
   apiFetch('/api/functions/completeCareVisit', { method: 'POST', body: { visitId, notes } });
+
+/** Προγραμματίζει επίσκεψη: δημιουργεί ραντεβού στην Ατζέντα και τα συνδέει. */
+export const scheduleCareVisit = ({ visitId, appointment_date }) =>
+  apiFetch('/api/functions/scheduleCareVisit', { method: 'POST', body: { visitId, appointment_date } });

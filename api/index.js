@@ -791,6 +791,18 @@ export default async function handler(req, res) {
         updated_date: now(),
       });
 
+      // Αν υπάρχει συνδεδεμένο ραντεβού, κλείσε το κι αυτό — αλλιώς θα έμενε
+      // «προγραμματισμένο» στην Ατζέντα για πάντα.
+      if (v.appointment_id) {
+        const apRow = first(await supa.select('appointments', { id: `eq.${v.appointment_id}` }));
+        if (apRow) {
+          await supa.update('appointments', apRow.id, {
+            data: { ...(apRow.data || {}), status: 'completed' },
+            updated_date: now(),
+          }).catch((e) => console.error('appointment close failed:', e));
+        }
+      }
+
       // Ενημέρωση μετρητή στο συμβόλαιο
       const cRow = first(await supa.select('care_contracts', { id: `eq.${v.contract_id}` }));
       if (cRow) {
@@ -802,6 +814,74 @@ export default async function handler(req, res) {
         });
       }
       return send(res, 200, { ok: true });
+    }
+
+    // Προγραμματισμός επίσκεψης: δημιουργεί ΠΡΑΓΜΑΤΙΚΟ ραντεβού στην Ατζέντα
+    // και το συνδέει με την επίσκεψη του συμβολαίου.
+    if (action === 'scheduleCareVisit') {
+      const visitRow = first(await supa.select('care_visits', { id: `eq.${body.visitId}` }));
+      if (!visitRow || !owns(user, visitRow)) return send(res, 404, { error: 'Η επίσκεψη δεν βρέθηκε.' });
+      const v = toClient(visitRow);
+      if (v.status === 'completed') return send(res, 409, { error: 'Η επίσκεψη έχει ήδη ολοκληρωθεί.' });
+
+      const when = String(body.appointment_date || '').trim();
+      if (!when || Number.isNaN(new Date(when).getTime())) {
+        return send(res, 400, { error: 'Μη έγκυρη ημερομηνία/ώρα.' });
+      }
+
+      // Στοιχεία πελάτη για το ραντεβού (ο τεχνίτης θέλει τηλέφωνο & διεύθυνση).
+      const client = toClient(first(await supa.select('clients', { id: `eq.${v.client_id}` })));
+
+      // Αν υπάρχει ήδη ραντεβού, ενημέρωσέ το αντί να φτιάξεις δεύτερο.
+      if (v.appointment_id) {
+        const apRow = first(await supa.select('appointments', { id: `eq.${v.appointment_id}` }));
+        if (apRow) {
+          await supa.update('appointments', apRow.id, {
+            data: { ...(apRow.data || {}), appointment_date: new Date(when).toISOString() },
+            updated_date: now(),
+          });
+          await supa.update('care_visits', v.id, {
+            data: { ...(visitRow.data || {}), status: 'scheduled', scheduled_date: new Date(when).toISOString() },
+            updated_date: now(),
+          });
+          return send(res, 200, { ok: true, appointmentId: apRow.id, updated: true });
+        }
+      }
+
+      // Δημιουργία ραντεβού
+      const apRow = await supa.insert('appointments', {
+        organization_id: visitRow.organization_id,
+        created_by: user.id,
+        data: {
+          name: `${v.title || 'Επίσκεψη συντήρησης'} — ${client?.name || ''}`.trim(),
+          phone: client?.phone || '',
+          address: client?.address || '',
+          appointment_date: new Date(when).toISOString(),
+          notes: `Jobix Care${v.sequence ? ` · επίσκεψη ${v.sequence}` : ''}`,
+          status: 'scheduled',
+          care_visit_id: v.id,   // σύνδεση πίσω στην επίσκεψη
+        },
+      });
+
+      // Σύνδεση της επίσκεψης με το ραντεβού. Αν αποτύχει, καθάρισε το ραντεβού
+      // ώστε να μη μείνει ορφανό στην Ατζέντα.
+      try {
+        await supa.update('care_visits', v.id, {
+          data: {
+            ...(visitRow.data || {}),
+            status: 'scheduled',
+            appointment_id: apRow.id,
+            scheduled_date: new Date(when).toISOString(),
+          },
+          updated_date: now(),
+        });
+      } catch (e) {
+        console.error('link visit->appointment failed, rolling back:', e);
+        await supa.remove('appointments', apRow.id).catch(() => {});
+        return send(res, 500, { error: 'Ο προγραμματισμός δεν ολοκληρώθηκε. Δοκιμάστε ξανά.' });
+      }
+
+      return send(res, 200, { ok: true, appointmentId: apRow.id, updated: false });
     }
 
     if (action === 'getProjectShareLink') {

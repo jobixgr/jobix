@@ -8,9 +8,10 @@ import { useToast } from '@/components/ui/use-toast';
 import { CarePlan, CareContract, CareVisit, Client, User } from '@/api/entities';
 import CarePlanDialog from '@/components/care/CarePlanDialog';
 import CareContractDialog from '@/components/care/CareContractDialog';
+import CareVisitDialog from '@/components/care/CareVisitDialog';
 import {
   Plus, ShieldCheck, Calendar, Users, Euro, TrendingUp,
-  Pencil, Clock, CheckCircle2,
+  Pencil, Clock, CheckCircle2, CalendarPlus, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { el } from 'date-fns/locale';
@@ -32,6 +33,7 @@ export default function Care() {
   const [clients, setClients] = useState([]);
   const [planDialog, setPlanDialog] = useState({ open: false, plan: null });
   const [contractDialog, setContractDialog] = useState({ open: false });
+  const [visitDialog, setVisitDialog] = useState({ open: false, visit: null });
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -63,10 +65,23 @@ export default function Care() {
   // --- Στατιστικά εσόδων ---
   const activeContracts = contracts.filter((c) => c.status === 'active');
   const recurringRevenue = activeContracts.reduce((s, c) => s + (Number(c.price) || 0), 0);
-  const upcomingVisits = visits
-    .filter((v) => v.status === 'pending')
-    .sort((a, b) => String(a.due_date).localeCompare(String(b.due_date)))
-    .slice(0, 5);
+  // ΥΠΕΝΘΥΜΙΣΕΙΣ: επισκέψεις που χρειάζονται δράση.
+  // «Ληξιπρόθεσμη» = πέρασε η ημερομηνία και δεν προγραμματίστηκε ποτέ.
+  // «Πλησιάζει»    = μέσα στις επόμενες 30 μέρες.
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+  const in30ISO = in30.toISOString().slice(0, 10);
+
+  const openVisits = visits.filter((v) => v.status !== 'completed');
+  const overdueVisits = openVisits.filter((v) => v.due_date && v.due_date < todayISO && v.status === 'pending');
+  const dueSoonVisits = openVisits.filter(
+    (v) => v.due_date && v.due_date >= todayISO && v.due_date <= in30ISO && v.status === 'pending'
+  );
+  const actionNeeded = overdueVisits.length + dueSoonVisits.length;
+
+  const sortedOpenVisits = [...openVisits].sort((a, b) =>
+    String(a.due_date).localeCompare(String(b.due_date))
+  );
 
   // Συμβόλαια που λήγουν στους επόμενους 2 μήνες
   const soon = new Date(); soon.setMonth(soon.getMonth() + 2);
@@ -130,15 +145,16 @@ export default function Care() {
             </p>
           </CardContent>
         </Card>
-        <Card>
+        <Card className={actionNeeded > 0 ? 'border-purple-300 bg-purple-50/50' : ''}>
           <CardContent className="p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm text-slate-500">Επόμενες επισκέψεις</p>
+              <p className="text-sm text-slate-500">Χρειάζονται δράση</p>
               <Calendar className="w-4 h-4 text-purple-500" />
             </div>
-            <p className="text-2xl font-bold text-slate-900 mt-1">
-              {visits.filter((v) => v.status === 'pending').length}
-            </p>
+            <p className="text-2xl font-bold text-purple-700 mt-1">{actionNeeded}</p>
+            {overdueVisits.length > 0 && (
+              <p className="text-xs text-red-600 mt-0.5">{overdueVisits.length} εκπρόθεσμες</p>
+            )}
           </CardContent>
         </Card>
         <Card className={expiringSoon.length > 0 ? 'border-amber-300 bg-amber-50/50' : ''}>
@@ -161,7 +177,7 @@ export default function Care() {
             Πακέτα ({plans.length})
           </TabsTrigger>
           <TabsTrigger value="visits" className="flex-1 md:flex-initial">
-            Επισκέψεις
+            Επισκέψεις{actionNeeded > 0 ? ` (${actionNeeded})` : ''}
           </TabsTrigger>
         </TabsList>
 
@@ -272,28 +288,69 @@ export default function Care() {
 
         {/* ---- ΕΠΙΣΚΕΨΕΙΣ ---- */}
         <TabsContent value="visits" className="mt-4">
-          {upcomingVisits.length === 0 ? (
+          {sortedOpenVisits.length === 0 ? (
             <Card><CardContent className="py-12 text-center">
               <Calendar className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <p className="text-slate-600">Καμία προγραμματισμένη επίσκεψη.</p>
+              <p className="text-slate-600 font-medium">Καμία εκκρεμής επίσκεψη</p>
+              <p className="text-sm text-slate-500 mt-1">
+                Οι επισκέψεις δημιουργούνται αυτόματα με την ενεργοποίηση συμβολαίου.
+              </p>
             </CardContent></Card>
           ) : (
             <div className="space-y-2">
-              {upcomingVisits.map((v) => (
-                <Card key={v.id}>
-                  <CardContent className="p-4 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <p className="font-medium text-slate-900 truncate">{v.title}</p>
-                      <p className="text-sm text-slate-500">{clientName(v.client_id)}</p>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-sm font-medium text-slate-700">
-                        {v.due_date ? format(new Date(v.due_date), 'dd MMM yyyy', { locale: el }) : '—'}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
+              {sortedOpenVisits.map((v) => {
+                const isOverdue = v.due_date && v.due_date < todayISO && v.status === 'pending';
+                const isSoon = v.due_date && v.due_date >= todayISO && v.due_date <= in30ISO && v.status === 'pending';
+                const isScheduled = v.status === 'scheduled';
+                return (
+                  <Card
+                    key={v.id}
+                    className={
+                      isOverdue ? 'border-red-200 bg-red-50/40'
+                      : isScheduled ? 'border-emerald-200 bg-emerald-50/30'
+                      : isSoon ? 'border-amber-200 bg-amber-50/30' : ''
+                    }
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-slate-900">{v.title}</p>
+                            {isOverdue && (
+                              <Badge className="bg-red-100 text-red-700 gap-1">
+                                <AlertTriangle className="w-3 h-3" /> Εκπρόθεσμη
+                              </Badge>
+                            )}
+                            {isScheduled && (
+                              <Badge className="bg-emerald-100 text-emerald-700">Στην Ατζέντα</Badge>
+                            )}
+                            {isSoon && !isScheduled && (
+                              <Badge className="bg-amber-100 text-amber-700">Πλησιάζει</Badge>
+                            )}
+                          </div>
+                          <p className="text-sm text-slate-600 mt-0.5">{clientName(v.client_id)}</p>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {isScheduled && v.scheduled_date
+                              ? `Ραντεβού: ${format(new Date(v.scheduled_date), 'dd MMM yyyy, HH:mm', { locale: el })}`
+                              : v.due_date
+                                ? `Προβλέπεται: ${format(new Date(v.due_date), 'dd MMM yyyy', { locale: el })}`
+                                : '—'}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant={isScheduled ? 'outline' : 'default'}
+                          className={isScheduled ? '' : 'gradient-bg text-white'}
+                          onClick={() => setVisitDialog({ open: true, visit: v })}
+                        >
+                          <CalendarPlus className="w-4 h-4 mr-2" />
+                          {isScheduled ? 'Άνοιγμα' : 'Προγραμματισμός'}
+                        </Button>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </TabsContent>
@@ -303,6 +360,13 @@ export default function Care() {
         open={planDialog.open}
         onOpenChange={(o) => setPlanDialog({ open: o, plan: o ? planDialog.plan : null })}
         existingPlan={planDialog.plan}
+        onSaved={load}
+      />
+      <CareVisitDialog
+        open={visitDialog.open}
+        onOpenChange={(o) => setVisitDialog({ open: o, visit: o ? visitDialog.visit : null })}
+        visit={visitDialog.visit}
+        clientName={visitDialog.visit ? clientName(visitDialog.visit.client_id) : ''}
         onSaved={load}
       />
       <CareContractDialog

@@ -18,12 +18,13 @@ import {
   Banknote // Added for expenses
 } from "lucide-react";
 import { differenceInDays, addDays } from 'date-fns';
-import { Project, Proposal, Payment, Client, Organization, Expense } from "@/api/entities"; // Added Expense
+import { Project, Proposal, Payment, Client, Organization, Expense, CareVisit } from "@/api/entities";
 import OrganizationGuard from "../components/OrganizationGuard";
 import { User } from "@/api/entities";
 
 import StatsCard from "../components/dashboard/StatsCard";
 import RecentProjects from "../components/dashboard/RecentProjects";
+import CareReminders from "../components/dashboard/CareReminders";
 import PendingPayments from "../components/dashboard/PendingPayments";
 import QuickActions from "../components/dashboard/QuickActions";
 import ProjectsChart from "../components/dashboard/ProjectsChart";
@@ -39,6 +40,8 @@ export default function Dashboard() {
   });
   const [allProjects, setAllProjects] = useState([]);
   const [recentProjects, setRecentProjects] = useState([]);
+  const [careVisits, setCareVisits] = useState([]);
+  const [allClients, setAllClients] = useState([]);
   const [pendingPayments, setPendingPayments] = useState([]);
   const [allPayments, setAllPayments] = useState([]); // Added for monthly revenue
   const [allExpenses, setAllExpenses] = useState([]); // Added for expenses chart
@@ -72,13 +75,16 @@ export default function Dashboard() {
         setIsTrialActive(true); // Assume active if not in trial or status is active
       }
 
-      const [projects, proposals, payments, clients, expenses] = await Promise.all([ // Added expenses
+      const [projects, proposals, payments, clients, expenses, visits] = await Promise.all([
         Project.filter({ organization_id: orgId }, '-created_date'),
         Proposal.filter({ organization_id: orgId }, '-created_date'),
         Payment.filter({ organization_id: orgId }, '-created_date'),
         Client.filter({ organization_id: orgId }, '-created_date'),
-        Expense.filter({ organization_id: orgId }, '-created_date') // Fetch expenses
+        Expense.filter({ organization_id: orgId }, '-created_date'),
+        CareVisit.filter({ organization_id: orgId }, 'due_date').catch(() => []),
       ]);
+      setCareVisits(visits || []);
+      setAllClients(clients || []);
 
       // Calculate stats
       const activeProjects = projects.filter(p => p.status === 'active').length;
@@ -178,6 +184,9 @@ export default function Dashboard() {
 
           {/* Quick Actions */}
           <QuickActions />
+
+          {/* Υπενθυμίσεις συντήρησης — εμφανίζεται μόνο αν υπάρχει κάτι εκκρεμές */}
+          {!isLoading && <CareReminders visits={careVisits} clients={allClients} />}
 
           {/* Main Content Grid - Enhanced */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
