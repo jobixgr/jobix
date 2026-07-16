@@ -21,8 +21,13 @@ export const sendPushNotifications = (payload) =>
 export const portalLogin = (token) =>
   apiFetch('/api/public/portal-login', { method: 'POST', body: { token } });
 
-export const publicProject = (id) =>
-  apiFetch('/api/public/project', { method: 'POST', body: { id } });
+// ΑΣΦΑΛΕΙΑ: δέχεται token, όχι project id (το id δεν εκτίθεται πλέον δημόσια).
+export const publicProject = (token) =>
+  apiFetch('/api/public/project', { method: 'POST', body: { token } });
+
+// Για τον ιδιοκτήτη: παίρνει τον δημόσιο σύνδεσμο του έργου (με token).
+export const getProjectShareLink = ({ projectId }) =>
+  apiFetch('/api/functions/getProjectShareLink', { method: 'POST', body: { projectId } });
 
 export const viewPublicProposal = (token) =>
   apiFetch('/api/public/proposal', { method: 'POST', body: { token } });

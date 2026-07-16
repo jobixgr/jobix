@@ -1,6 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useSearchParams } from 'react-router-dom';
 import { publicProject } from '@/api/functions';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from "@/components/ui/progress";
@@ -11,7 +11,9 @@ import { format } from "date-fns";
 import { el } from "date-fns/locale";
 
 export default function PublicProjectView() {
-    const { id } = useParams();
+    // ΑΣΦΑΛΕΙΑ: το link είναι πλέον /publicprojectview?token=... (όχι /<uuid>)
+    const [searchParams] = useSearchParams();
+    const token = searchParams.get('token');
     const [project, setProject] = useState(null);
     const [tasks, setTasks] = useState([]);
     const [payments, setPayments] = useState([]);
@@ -25,7 +27,7 @@ export default function PublicProjectView() {
             try {
                 // Δημόσιο endpoint: επιστρέφει μόνο τα δεδομένα του συγκεκριμένου
                 // έργου, χωρίς να απαιτεί (ή να εκθέτει) λογαριασμό χρήστη.
-                const data = await publicProject(id);
+                const data = await publicProject(token);
                 if (data?.project) {
                     setProject(data.project);
                     setTasks(data.tasks || []);
@@ -40,7 +42,7 @@ export default function PublicProjectView() {
             }
         };
         loadData();
-    }, [id]);
+    }, [token]);
 
     if (isLoading) {
         return <div className="p-8"><Skeleton className="h-screen w-full" /></div>;

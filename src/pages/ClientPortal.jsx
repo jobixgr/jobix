@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/components/ui/use-toast';
 
 import { 
@@ -50,6 +51,8 @@ export default function ClientPortal() {
   const [client, setClient] = useState(null);
   const [projects, setProjects] = useState([]);
   const [invoices, setInvoices] = useState([]);
+  const [invoiceItems, setInvoiceItems] = useState([]);
+  const [viewingInvoice, setViewingInvoice] = useState(null);
   const [files, setFiles] = useState([]);
   const { toast } = useToast();
 
@@ -70,6 +73,7 @@ export default function ClientPortal() {
       setClient(data.client);
       setProjects(data.projects);
       setInvoices(data.invoices);
+      setInvoiceItems(data.invoiceItems || []);
       setFiles(data.files);
       setIsAuthenticated(true);
 
@@ -287,7 +291,11 @@ export default function ClientPortal() {
                             </div>
                           </div>
                         </div>
-                        <Button variant="outline" size="sm">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setViewingInvoice(invoice)}
+                        >
                           <Eye className="w-4 h-4 mr-2" />
                           Προβολή
                         </Button>
@@ -339,6 +347,72 @@ export default function ClientPortal() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Λεπτομέρειες παραστατικού */}
+      <Dialog open={!!viewingInvoice} onOpenChange={(open) => !open && setViewingInvoice(null)}>
+        <DialogContent className="sm:max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Παραστατικό #{viewingInvoice?.number}</DialogTitle>
+          </DialogHeader>
+          {viewingInvoice && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div>
+                  <p className="text-slate-500">Ημερομηνία έκδοσης</p>
+                  <p className="font-medium">
+                    {viewingInvoice.issue_date
+                      ? format(new Date(viewingInvoice.issue_date), 'dd/MM/yyyy', { locale: el })
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-slate-500">Λήξη</p>
+                  <p className="font-medium">
+                    {viewingInvoice.due_date
+                      ? format(new Date(viewingInvoice.due_date), 'dd/MM/yyyy', { locale: el })
+                      : '—'}
+                  </p>
+                </div>
+              </div>
+
+              <div className="border rounded-lg divide-y">
+                {invoiceItems.filter(it => it.invoice_id === viewingInvoice.id).length === 0 ? (
+                  <p className="p-4 text-sm text-slate-500 text-center">
+                    Δεν υπάρχουν αναλυτικές γραμμές.
+                  </p>
+                ) : (
+                  invoiceItems
+                    .filter(it => it.invoice_id === viewingInvoice.id)
+                    .map(item => (
+                      <div key={item.id} className="p-3 flex justify-between gap-3 text-sm">
+                        <div className="flex-1 min-w-0">
+                          <p className="font-medium text-slate-800 break-words">
+                            {item.description || '—'}
+                          </p>
+                          {(item.quantity || item.unit_price) && (
+                            <p className="text-slate-500 text-xs mt-0.5">
+                              {item.quantity || 1} × €{Number(item.unit_price || 0).toLocaleString('el-GR')}
+                            </p>
+                          )}
+                        </div>
+                        <p className="font-semibold whitespace-nowrap">
+                          €{Number(item.total ?? (item.quantity || 1) * (item.unit_price || 0)).toLocaleString('el-GR')}
+                        </p>
+                      </div>
+                    ))
+                )}
+              </div>
+
+              <div className="flex justify-between items-center pt-2 border-t">
+                <span className="font-semibold text-slate-700">Σύνολο</span>
+                <span className="text-xl font-bold text-slate-900">
+                  €{Number(viewingInvoice.total || 0).toLocaleString('el-GR')}
+                </span>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

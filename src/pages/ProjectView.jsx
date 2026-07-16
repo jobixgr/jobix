@@ -13,6 +13,7 @@ import {
   User,
   Expense // Added Expense entity
 } from "@/api/entities";
+import { getProjectShareLink } from "@/api/functions";
 import { useToast } from "@/components/ui/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -252,11 +253,25 @@ export default function ProjectView() {
         }
     };
 
-    const handleShare = () => {
-        if (!projectId) return;
-        const url = `${window.location.origin}${createPageUrl("PublicProjectView", projectId)}`;
-        navigator.clipboard.writeText(url);
-        toast({ title: "Ο δημόσιος σύνδεσμος αντιγράφηκε!", description: url });
+    const [isSharing, setIsSharing] = useState(false);
+
+    const handleShare = async () => {
+        if (!projectId || isSharing) return;
+        setIsSharing(true);
+        try {
+            // Ο σύνδεσμος περιέχει τυχαίο token — ΟΧΙ το id του έργου.
+            const { url } = await getProjectShareLink({ projectId });
+            await navigator.clipboard.writeText(url);
+            toast({ title: "Ο δημόσιος σύνδεσμος αντιγράφηκε!", description: url });
+        } catch (e) {
+            toast({
+                title: "Σφάλμα",
+                description: e.message || "Δεν ήταν δυνατή η δημιουργία συνδέσμου.",
+                variant: "destructive",
+            });
+        } finally {
+            setIsSharing(false);
+        }
     };
 
     const handleDownloadProposalPdf = () => {

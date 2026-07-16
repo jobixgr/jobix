@@ -48,6 +48,7 @@ export const ENTITY_MAP = {
   ItemTemplate: 'item_templates',
   TemplateGroup: 'template_groups',
   ProposalLink: 'proposal_links',
+  ProjectLink: 'project_links',
   Appointment: 'appointments',
   Expense: 'expenses',
   ClientAccess: 'client_access',
@@ -375,6 +376,28 @@ export async function invokeLLM({ prompt, response_json_schema, add_context_from
 export { crypto };
 
 /* ---------------- Rate limiting (Ενότητα 2) ---------------- */
+
+// Καλεί οποιαδήποτε SQL function (RPC) του Supabase. Σε αντίθεση με το rlHit,
+// ΔΕΝ κάνει fail-open: αν αποτύχει, πετάει σφάλμα — γιατί χρησιμοποιείται για
+// κρίσιμες λειτουργίες (π.χ. atomic αποδοχή προσφοράς) όπου η σιωπηλή αποτυχία
+// θα άφηνε τα δεδομένα μισοτελειωμένα.
+export async function rpc(fnName, params = {}) {
+  if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error('Supabase not configured');
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, {
+    method: 'POST',
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`RPC ${fnName} απέτυχε (${res.status}): ${text.slice(0, 200)}`);
+  }
+  try { return text ? JSON.parse(text) : null; } catch { return text; }
+}
 
 // Καλεί την SQL function rl_hit (ατομική αύξηση). Επιστρέφει το τρέχον count
 // στο παράθυρο. Αν κάτι πάει στραβά (π.χ. δεν έχει τρέξει το νέο schema),

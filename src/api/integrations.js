@@ -6,21 +6,76 @@ import { apiFetch } from './http';
 export const InvokeLLM = (payload) =>
   apiFetch('/api/integrations/invoke-llm', { method: 'POST', body: payload });
 
-// Upload αρχείου: διαβάζεται ως base64 και αποθηκεύεται στον server.
-export const UploadFile = async ({ file }) => {
-  const data = await new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result).split(',')[1]);
-    reader.onerror = () => reject(new Error('Αποτυχία ανάγνωσης αρχείου.'));
-    reader.readAsDataURL(file);
-  });
-  return apiFetch('/api/integrations/upload', {
+/**
+ * Upload αρχείου ΑΠΕΥΘΕΙΑΣ στο Supabase Storage.
+ *
+ * ΓΙΑΤΙ ΟΧΙ base64 μέσω του API:
+ *   Τα Vercel functions έχουν όριο ~4.5MB στο request body, και το base64
+ *   μεγαλώνει το αρχείο κατά ~33%. Αποτέλεσμα: αρχεία >3MB απέτυχαν, παρότι
+ *   η εφαρμογή διαφήμιζε όριο 20MB.
+ *
+ * ΠΩΣ ΔΟΥΛΕΥΕΙ ΤΩΡΑ:
+ *   1) Ζητάμε από τον server signed upload URL (ελέγχει τύπο/μέγεθος).
+ *   2) Ο browser ανεβάζει το αρχείο κατευθείαν στο Supabase (χωρίς όριο Vercel).
+ *   3) Επιστρέφουμε το storage_path για αποθήκευση στη βάση.
+ *
+ * @param {File} file
+ * @param {(percent:number)=>void} [onProgress]
+ */
+export const UploadFile = async ({ file, onProgress }) => {
+  if (!file) throw new Error('Δεν επιλέχθηκε αρχείο.');
+
+  // 1) signed URL (ο server επικυρώνει τύπο & μέγεθος)
+  const { uploadUrl, path } = await apiFetch('/api/integrations/upload-url', {
     method: 'POST',
-    body: { name: file.name, type: file.type, data },
+    body: { name: file.name, type: file.type, size: file.size },
   });
+
+  // 2) απευθείας ανέβασμα, με progress
+  await new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl, true);
+    xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    if (onProgress) {
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+      };
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) resolve();
+      else reject(new Error(`Αποτυχία ανεβάσματος (${xhr.status}).`));
+    };
+    xhr.onerror = () => reject(new Error('Σφάλμα δικτύου κατά το ανέβασμα.'));
+    xhr.ontimeout = () => reject(new Error('Λήξη χρόνου κατά το ανέβασμα.'));
+    xhr.send(file);
+  });
+
+  return { storage_path: path, name: file.name, type: file.type, size: file.size };
 };
 
 export const UploadPrivateFile = UploadFile;
+
+/**
+ * Προσωρινό URL για άνοιγμα/κατέβασμα ιδιωτικού αρχείου (ισχύει 1 ώρα).
+ * Τα αρχεία ΔΕΝ είναι πλέον δημόσια — χρειάζεται πάντα signed URL.
+ */
+export const CreateFileSignedUrl = async ({ path }) => {
+  const { urls } = await apiFetch('/api/integrations/file-url', {
+    method: 'POST',
+    body: { path },
+  });
+  return { url: urls?.[path] || null };
+};
+
+/** Batch: signed URLs για πολλά αρχεία με ΕΝΑ request (αποφυγή N+1). */
+export const CreateFileSignedUrls = async (paths) => {
+  if (!paths?.length) return {};
+  const { urls } = await apiFetch('/api/integrations/file-url', {
+    method: 'POST',
+    body: { paths },
+  });
+  return urls || {};
+};
 
 // Δεν υποστηρίζονται στη standalone έκδοση — καθαρό σφάλμα αντί για σιωπηλή αποτυχία.
 const notSupported = (name) => async () => {
@@ -30,7 +85,6 @@ const notSupported = (name) => async () => {
 export const SendEmail = notSupported('SendEmail');
 export const GenerateImage = notSupported('GenerateImage');
 export const ExtractDataFromUploadedFile = notSupported('ExtractDataFromUploadedFile');
-export const CreateFileSignedUrl = notSupported('CreateFileSignedUrl');
 
 export const Core = {
   InvokeLLM,

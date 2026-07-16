@@ -62,7 +62,7 @@ export default function Pages() {
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/clientportal" element={<ClientPortal />} />
-        <Route path="/publicprojectview/:id" element={<PublicProjectView />} />
+        <Route path="/publicprojectview" element={<PublicProjectView />} />
         <Route path="/proposalpdf" element={<ProposalPDF />} />
 
         {/* Προστατευμένες (μέσα στο Layout) */}

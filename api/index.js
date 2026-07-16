@@ -4,7 +4,7 @@
 import {
   ENTITY_MAP, supa, toClient, toData, signToken, hashPassword, verifyPassword,
   getUserFromReq, publicUser, isAdmin, send, readJson, applyCors, now,
-  enforceRateLimit, clientIp, sendEmail, invokeLLM,
+  enforceRateLimit, clientIp, sendEmail, invokeLLM, rpc,
 } from './_lib/core.js';
 import crypto from 'node:crypto';
 
@@ -31,6 +31,17 @@ const APP_URL = (() => {
   return 'http://localhost:5173';
 })();
 
+async function ensureProjectLink(projectId, orgId, createdBy) {
+  const existing = (await supa.select('project_links', { 'data->>project_id': `eq.${projectId}` })).map(toClient);
+  if (existing.length) return existing[0];
+  const row = await supa.insert('project_links', {
+    organization_id: orgId,
+    created_by: createdBy || 'system',
+    data: { project_id: projectId, token: crypto.randomUUID() },
+  });
+  return toClient(row);
+}
+
 async function ensureProposalLink(proposalId, orgId, createdBy) {
   const existing = (await supa.select('proposal_links', { 'data->>proposal_id': `eq.${proposalId}` })).map(toClient);
   if (existing.length) return existing[0];
@@ -47,21 +58,86 @@ function owns(user, row) {
   return row && row.organization_id === user.organization_id;
 }
 
-async function uploadToStorage({ name, type, data }) {
+// Επιτρεπόμενοι τύποι αρχείων. Ό,τι δεν είναι εδώ, απορρίπτεται.
+// (Αποτρέπει ανέβασμα εκτελέσιμων/scripts που θα μπορούσαν να σερβιριστούν.)
+const ALLOWED_MIME = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/heic', 'image/heif',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'text/plain', 'text/csv',
+]);
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024; // 20MB — πραγματικό όριο πλέον
+
+function safeExt(name) {
+  const m = String(name || '').match(/\.[a-zA-Z0-9]{1,10}$/);
+  return m ? m[0].toLowerCase() : '';
+}
+
+// Δημιουργεί signed URL ώστε ο BROWSER να ανεβάσει ΑΠΕΥΘΕΙΑΣ στο Supabase.
+// ΓΙΑΤΙ: τα Vercel functions έχουν όριο ~4.5MB στο request body. Το παλιό
+// base64-σε-JSON έσπαγε σε αρχεία >3MB, παρότι ο κώδικας διαφήμιζε 20MB.
+async function createSignedUploadUrl({ name, type, size }) {
   if (!SUPABASE_URL || !SUPABASE_KEY) {
     const err = new Error('Λείπουν οι μεταβλητές Supabase.'); err.status = 501; throw err;
   }
-  const buf = Buffer.from(data, 'base64');
-  if (buf.length > 20 * 1024 * 1024) { const err = new Error('Το αρχείο ξεπερνά τα 20MB.'); err.status = 413; throw err; }
-  const ext = (name.match(/\.[a-zA-Z0-9]{1,10}$/) || [''])[0];
-  const objectPath = `${new Date().getFullYear()}/${crypto.randomUUID()}${ext}`;
-  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`, {
+  if (!ALLOWED_MIME.has(type)) {
+    const err = new Error(`Ο τύπος αρχείου "${type || 'άγνωστος'}" δεν επιτρέπεται.`);
+    err.status = 415; throw err;
+  }
+  if (!size || size > MAX_UPLOAD_BYTES) {
+    const err = new Error(`Το αρχείο ξεπερνά το όριο των ${MAX_UPLOAD_BYTES / 1024 / 1024}MB.`);
+    err.status = 413; throw err;
+  }
+  const objectPath = `${new Date().getFullYear()}/${crypto.randomUUID()}${safeExt(name)}`;
+  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/upload/sign/${BUCKET}/${objectPath}`, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY, 'Content-Type': type || 'application/octet-stream', 'x-upsert': 'true' },
-    body: buf,
+    headers: { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
   });
-  if (!resp.ok) { const d = await resp.text().catch(()=> ''); console.error('Storage error:', resp.status, d); const err = new Error('Αποτυχία αποθήκευσης αρχείου.'); err.status = 502; throw err; }
-  return { file_url: `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/${objectPath}`, name, type, size: buf.length };
+  if (!resp.ok) {
+    const d = await resp.text().catch(() => '');
+    console.error('signed upload url error:', resp.status, d);
+    const err = new Error('Αποτυχία προετοιμασίας ανεβάσματος.'); err.status = 502; throw err;
+  }
+  const json = await resp.json();
+  // Το Supabase επιστρέφει π.χ. { url: "/object/upload/sign/bucket/path?token=..." }
+  const uploadUrl = `${SUPABASE_URL}/storage/v1${json.url.startsWith('/') ? json.url : '/' + json.url}`;
+  return { uploadUrl, path: objectPath, token: json.token };
+}
+
+// Προσωρινό URL για ΑΝΑΓΝΩΣΗ ιδιωτικού αρχείου (default 1 ώρα).
+async function createSignedDownloadUrl(objectPath, expiresIn = 3600) {
+  const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/sign/${BUCKET}/${objectPath}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ expiresIn }),
+  });
+  if (!resp.ok) {
+    const d = await resp.text().catch(() => '');
+    console.error('sign download error:', resp.status, d);
+    return null;
+  }
+  const json = await resp.json();
+  const signed = json.signedURL || json.signedUrl || '';
+  return signed ? `${SUPABASE_URL}/storage/v1${signed.startsWith('/') ? signed : '/' + signed}` : null;
+}
+
+// Διαγράφει το πραγματικό αρχείο από το Storage (file cleanup).
+async function deleteFromStorage(objectPath) {
+  if (!objectPath) return false;
+  try {
+    const resp = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${objectPath}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${SUPABASE_KEY}`, apikey: SUPABASE_KEY },
+    });
+    return resp.ok;
+  } catch (e) {
+    console.error('storage delete error:', e);
+    return false;
+  }
 }
 
 export default async function handler(req, res) {
@@ -473,6 +549,14 @@ export default async function handler(req, res) {
       const rows = await supa.select(table, { id: `eq.${tail}` });
       const row = rows && rows[0];
       if (!row || !canWrite(row)) return send(res, 404, { error: 'Δεν βρέθηκε.' });
+
+      // File cleanup: αν είναι αρχείο, σβήσε και το πραγματικό object από το
+      // Storage — αλλιώς θα συσσωρεύονταν ορφανά αρχεία που πληρώνεις.
+      if (table === 'files') {
+        const p = (row.data || {}).storage_path;
+        if (p) await deleteFromStorage(p);
+      }
+
       await supa.remove(table, tail);
       return send(res, 200, { ok: true });
     }
@@ -504,21 +588,46 @@ export default async function handler(req, res) {
       const projects = (await supa.select('projects', { 'data->>client_id': `eq.${client.id}` })).map(toClient);
       const projectIds = new Set(projects.map((p) => p.id));
       const invoices = (await supa.select('invoices', { 'data->>client_id': `eq.${client.id}` })).map(toClient);
+      // Οι γραμμές των παραστατικών, ώστε ο πελάτης να μπορεί να δει τι χρεώθηκε.
+      const invoiceIds = new Set(invoices.map((i) => i.id));
+      const allItems = invoiceIds.size
+        ? (await supa.select('invoice_items', { organization_id: `eq.${client.organization_id}` })).map(toClient)
+        : [];
+      const invoiceItems = allItems.filter((it) => invoiceIds.has(it.invoice_id));
       const allFiles = (await supa.select('files', { organization_id: `eq.${client.organization_id}` })).map(toClient);
-      const files = allFiles.filter((f) => projectIds.has(f.project_id));
+      const clientFiles = allFiles.filter((f) => projectIds.has(f.project_id));
+      // Signed URLs (1 ώρα) — το bucket είναι πλέον ιδιωτικό.
+      const files = await Promise.all(clientFiles.map(async (f) => ({
+        ...f,
+        url: f.storage_path ? await createSignedDownloadUrl(f.storage_path) : null,
+      })));
 
       await supa.update('client_access', access.id, { data: { ...access, last_accessed: now() } });
-      return send(res, 200, { client, projects, invoices, files });
+      return send(res, 200, { client, projects, invoices, invoiceItems, files });
     }
 
     // ---------- PUBLIC PROJECT ----------
+    // ΑΣΦΑΛΕΙΑ: δέχεται ΜΟΝΟ token, ποτέ το project id. Με το id, οποιοσδήποτε
+    // το αποκτούσε (logs, screenshot, ιστορικό) έβλεπε πληρωμές και αρχεία.
     if (action === 'project') {
-      const project = toClient(first(await supa.select('projects', { id: `eq.${body.id}` })));
+      const token = String(body.token || '').trim();
+      if (!token) return send(res, 400, { error: 'Λείπει ο σύνδεσμος.' });
+      const link = toClient(first(await supa.select('project_links', { 'data->>token': `eq.${token}` })));
+      if (!link) return send(res, 404, { error: 'Ο σύνδεσμος δεν είναι έγκυρος.' });
+      if (link.is_active === false) return send(res, 403, { error: 'Ο σύνδεσμος έχει απενεργοποιηθεί.' });
+
+      const project = toClient(first(await supa.select('projects', { id: `eq.${link.project_id}` })));
       if (!project) return send(res, 404, { error: 'Το έργο δεν βρέθηκε.' });
       const org = toClient(first(await supa.select('organizations', { id: `eq.${project.organization_id}` })));
       const tasks = (await supa.select('tasks', { 'data->>project_id': `eq.${project.id}` })).map(toClient);
       const payments = (await supa.select('payments', { 'data->>project_id': `eq.${project.id}` })).map(toClient);
-      const files = (await supa.select('files', { 'data->>project_id': `eq.${project.id}` })).map(toClient);
+      const rawFiles = (await supa.select('files', { 'data->>project_id': `eq.${project.id}` })).map(toClient);
+      // Τα αρχεία είναι ιδιωτικά: δίνουμε προσωρινά signed URLs (1 ώρα) ώστε
+      // η δημόσια σελίδα να μπορεί να τα εμφανίσει χωρίς να είναι το bucket public.
+      const files = await Promise.all(rawFiles.map(async (f) => ({
+        ...f,
+        url: f.storage_path ? await createSignedDownloadUrl(f.storage_path) : null,
+      })));
       return send(res, 200, {
         project, tasks, payments, files,
         organization: org ? { id: org.id, name: org.name, phone: org.phone, email: org.email, logo_url: org.logo_url } : null,
@@ -558,96 +667,50 @@ export default async function handler(req, res) {
         return send(res, 409, { error: 'Έχει ήδη δοθεί απάντηση σε αυτή την προσφορά.', status: proposal.status });
       }
 
-      // ενημέρωση status προσφοράς
-      const newData = { ...(proposalRow.data || {}), status: response, responded_at: now() };
-      if (response === 'accepted') newData.accepted_at = now();
-      await supa.update('proposals', proposal.id, { data: newData, updated_date: now() });
-
-      // Μετατροπή σε έργο (μόνο σε accepted, μόνο αν δεν υπάρχει ήδη)
-      if (response === 'accepted') {
-        try {
-          const orgId = proposal.organization_id;
-          const today = new Date().toISOString().split('T')[0];
-          const existing = (await supa.select('projects', { 'data->>proposal_id': `eq.${proposal.id}` })).map(toClient);
-          if (existing.length === 0) {
-            const projectRow = await supa.insert('projects', {
-              organization_id: orgId,
-              created_by: proposal.created_by || 'system',
-              data: {
-                client_id: proposal.client_id,
-                proposal_id: proposal.id,
-                title: proposal.title,
-                description: proposal.description || 'Έργο βάσει προσφοράς',
-                status: 'active',
-                start_date: today,
-                budget_total: proposal.total,
-                notes: `Δημιουργήθηκε αυτόματα από αποδοχή προσφοράς #${proposal.number} από τον πελάτη`,
-              },
-            });
-            const project = toClient(projectRow);
-
-            // εργασίες
-            const items = (await supa.select('proposal_items', { 'data->>proposal_id': `eq.${proposal.id}` })).map(toClient);
-            for (const item of items) {
-              await supa.insert('tasks', {
-                organization_id: orgId,
-                created_by: proposal.created_by || 'system',
-                data: {
-                  project_id: project.id,
-                  title: item.description,
-                  description: `${item.type === 'labor' ? '🔧 Εργασία' : '📦 Υλικό'} - Ποσότητα: ${item.quantity} ${item.unit || 'τεμ.'}, Τιμή: €${item.unit_price}`,
-                  status: 'todo',
-                  priority: 'medium',
-                },
-              });
-            }
-
-            // προκαταβολή
-            if (proposal.has_advance && proposal.advance_amount > 0) {
-              await supa.insert('payments', {
-                organization_id: orgId,
-                created_by: proposal.created_by || 'system',
-                data: {
-                  project_id: project.id,
-                  client_id: proposal.client_id,
-                  title: `Προκαταβολή για ${proposal.title}`,
-                  amount: proposal.advance_amount,
-                  currency: proposal.currency || 'EUR',
-                  due_date: proposal.advance_received_at || today,
-                  status: 'paid',
-                  paid_at: proposal.advance_received_at ? new Date(proposal.advance_received_at).toISOString() : now(),
-                  method: 'bank_transfer',
-                  notes: `Προκαταβολή από προσφορά #${proposal.number}`,
-                },
-              });
-            }
-
-            // υπόλοιπο
-            const remaining = (proposal.total || 0) - (proposal.advance_amount || 0);
-            if (remaining > 0) {
-              const due = new Date(); due.setDate(due.getDate() + 30);
-              await supa.insert('payments', {
-                organization_id: orgId,
-                created_by: proposal.created_by || 'system',
-                data: {
-                  project_id: project.id,
-                  client_id: proposal.client_id,
-                  title: `Υπόλοιπο πληρωμή για ${proposal.title}`,
-                  amount: remaining,
-                  currency: proposal.currency || 'EUR',
-                  due_date: due.toISOString().split('T')[0],
-                  status: 'pending',
-                  notes: `Υπόλοιπο πληρωμή από προσφορά #${proposal.number}`,
-                },
-              });
-            }
-          }
-        } catch (e) {
-          console.error('⚠️ Μετατροπή σε έργο απέτυχε (η αποδοχή καταγράφηκε):', e);
-        }
+      // ---- ΑΠΟΡΡΙΨΗ: απλή ενημέρωση status ----
+      if (response === 'rejected') {
+        const newData = { ...(proposalRow.data || {}), status: 'rejected', responded_at: now() };
+        await supa.update('proposals', proposal.id, { data: newData, updated_date: now() });
+        return send(res, 200, { ok: true, status: 'rejected' });
       }
 
-      return send(res, 200, { ok: true, status: response });
+      // ---- ΑΠΟΔΟΧΗ: ΟΛΑ σε μία SQL transaction ----
+      // Η function accept_proposal κάνει atomically: status + έργο + εργασίες + προκαταβολή.
+      // Είτε ολοκληρώνονται όλα, είτε τίποτα. Το unique index εμποδίζει διπλά έργα
+      // ακόμα και σε ταυτόχρονα requests.
+      let result;
+      try {
+        result = await rpc('accept_proposal', { p_proposal_id: proposal.id });
+      } catch (e) {
+        console.error('accept_proposal RPC error:', e);
+        // ΔΕΝ καταπίνουμε το σφάλμα: ο πελάτης πρέπει να ξέρει ότι απέτυχε.
+        return send(res, 500, {
+          error: 'Η αποδοχή δεν ολοκληρώθηκε. Δεν έγινε καμία αλλαγή — δοκιμάστε ξανά ή επικοινωνήστε με τον ανάδοχο.',
+        });
+      }
+
+      if (!result?.ok) {
+        if (result?.error === 'already_answered') {
+          return send(res, 409, { error: 'Έχει ήδη δοθεί απάντηση σε αυτή την προσφορά.', status: result.status });
+        }
+        return send(res, 500, { error: 'Η αποδοχή δεν ολοκληρώθηκε. Δοκιμάστε ξανά.' });
+      }
+
+      // Ειδοποίηση στον ανάδοχο (δεν επηρεάζει την αποδοχή αν αποτύχει)
+      try {
+        const org = toClient(first(await supa.select('organizations', { id: `eq.${proposal.organization_id}` })));
+        if (org?.email) {
+          await sendEmail({
+            to: org.email,
+            subject: `Η προσφορά #${proposal.number || ''} έγινε αποδεκτή!`,
+            body: `Καλά νέα!\n\nΟ πελάτης ${proposal.client_details?.name || ''} αποδέχτηκε την προσφορά #${proposal.number || ''} (€${proposal.total || 0}).\n\nΤο έργο δημιουργήθηκε αυτόματα στο Jobix.\n\n${APP_URL}/projects`,
+          });
+        }
+      } catch (e) {
+        console.error('acceptance notify email failed:', e);
+      }
+
+      return send(res, 200, { ok: true, status: 'accepted', projectId: result.project_id });
     }
 
     return send(res, 404, { error: 'Not found' });
@@ -680,6 +743,15 @@ export default async function handler(req, res) {
       return send(res, 200, { emailSent: result.sent === true, publicUrl });
     }
 
+    // Επιστρέφει (ή δημιουργεί) τον δημόσιο σύνδεσμο του έργου.
+    // Μόνο ο ιδιοκτήτης μπορεί να τον πάρει — ο σύνδεσμος περιέχει token, όχι το id.
+    if (action === 'getProjectShareLink') {
+      const projectRow = first(await supa.select('projects', { id: `eq.${body.projectId}` }));
+      if (!projectRow || !owns(user, projectRow)) return send(res, 404, { error: 'Το έργο δεν βρέθηκε.' });
+      const link = await ensureProjectLink(projectRow.id, projectRow.organization_id, projectRow.created_by);
+      return send(res, 200, { url: `${APP_URL}/publicprojectview?token=${link.token}`, token: link.token });
+    }
+
     if (action === 'sendInvoiceEmail') {
       const invoiceRow = first(await supa.select('invoices', { id: `eq.${body.invoiceId}` }));
       if (!invoiceRow || !owns(user, invoiceRow)) return send(res, 404, { error: 'Το παραστατικό δεν βρέθηκε.' });
@@ -709,13 +781,36 @@ export default async function handler(req, res) {
       const user = await getUserFromReq(req);
       if (!user) return send(res, 401, { error: 'Απαιτείται σύνδεση.' });
 
-    if (action === 'upload') {
-      // Προστασία: max 30 uploads ανά χρήστη / ώρα
+    // Βήμα 1: ο browser ζητά signed URL. Βήμα 2: ανεβάζει ΑΠΕΥΘΕΙΑΣ στο Supabase.
+    // Έτσι παρακάμπτεται το όριο 4.5MB των Vercel functions.
+    if (action === 'upload-url') {
       if (await enforceRateLimit(req, res, { name: 'upload', identifier: user.id, limit: 30, windowSec: 3600 })) return;
-      const { name = 'file', type = 'application/octet-stream', data } = await readJson(req);
-      if (!data) return send(res, 400, { error: 'Λείπει το αρχείο.' });
-      const result = await uploadToStorage({ name, type, data });
+      const { name, type, size } = await readJson(req);
+      const result = await createSignedUploadUrl({ name, type, size });
       return send(res, 200, result);
+    }
+
+    // Προσωρινά URLs ανάγνωσης ιδιωτικών αρχείων. Δέχεται ΕΝΑ path ή ΠΟΛΛΑ
+    // (batch), ώστε μια σελίδα με 20 αρχεία να μην κάνει 20 requests.
+    if (action === 'file-url') {
+      const body2 = await readJson(req);
+      const paths = Array.isArray(body2.paths)
+        ? body2.paths
+        : (body2.path ? [body2.path] : []);
+      if (!paths.length) return send(res, 400, { error: 'Λείπει το αρχείο.' });
+      if (paths.length > 50) return send(res, 400, { error: 'Πάρα πολλά αρχεία σε ένα αίτημα.' });
+
+      // Φέρε ΜΙΑ φορά όλα τα file records του οργανισμού και έλεγξε δικαιώματα.
+      const orgFiles = await supa.select('files', isAdmin(user) ? {} : { organization_id: `eq.${user.organization_id}` });
+      const allowed = new Set(orgFiles.map((r) => (r.data || {}).storage_path).filter(Boolean));
+
+      const urls = {};
+      for (const p of paths) {
+        if (!allowed.has(p)) continue;  // σιωπηλά αγνοούμε ό,τι δεν του ανήκει
+        const u = await createSignedDownloadUrl(p);
+        if (u) urls[p] = u;
+      }
+      return send(res, 200, { urls });
     }
 
     if (action === 'invoke-llm') {

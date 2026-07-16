@@ -4,9 +4,10 @@ import { useNavigate, Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, Receipt, Download, Send, Printer, Edit, QrCode, AlertCircle } from "lucide-react";
+import { ArrowLeft, Receipt, Download, Send, Printer, Edit, QrCode, AlertCircle, Loader2 } from "lucide-react";
 import { createPageUrl } from "@/utils";
 import { Invoice, InvoiceItem, Organization } from "@/api/entities";
+import { sendInvoiceEmail } from "@/api/functions";
 import { useToast } from "@/components/ui/use-toast";
 import { format } from "date-fns";
 import { el } from "date-fns/locale";
@@ -80,6 +81,45 @@ export default function InvoiceView() {
     window.print();
   };
 
+  const [isSending, setIsSending] = useState(false);
+
+  const handleSendInvoice = async () => {
+    if (isSending) return;  // προστασία από διπλό πάτημα
+    const clientEmail = invoice?.client_details?.email;
+    if (!clientEmail) {
+      toast({
+        title: "Λείπει email",
+        description: "Ο πελάτης δεν έχει καταχωρημένο email. Προσθέστε το από την καρτέλα του πελάτη.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setIsSending(true);
+    try {
+      const res = await sendInvoiceEmail({ invoiceId: invoice.id });
+      if (res?.emailSent) {
+        toast({
+          title: "Στάλθηκε!",
+          description: `Το παραστατικό στάλθηκε στο ${clientEmail}.`,
+        });
+      } else {
+        toast({
+          title: "Δεν στάλθηκε",
+          description: "Το email δεν είναι ρυθμισμένο. Ελέγξτε τις ρυθμίσεις.",
+          variant: "destructive",
+        });
+      }
+    } catch (e) {
+      toast({
+        title: "Σφάλμα αποστολής",
+        description: e.message || "Δοκιμάστε ξανά.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   if (isLoading) {
     return (
       <div className="p-4 md:p-8 space-y-6">
@@ -141,9 +181,18 @@ export default function InvoiceView() {
               <Printer className="w-4 h-4 mr-2" />
               Εκτύπωση
             </Button>
-            <Button variant="outline" className="flex-1 md:flex-initial">
-              <Send className="w-4 h-4 mr-2" />
-              Αποστολή
+            <Button
+              variant="outline"
+              className="flex-1 md:flex-initial"
+              onClick={handleSendInvoice}
+              disabled={isSending}
+            >
+              {isSending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="w-4 h-4 mr-2" />
+              )}
+              {isSending ? 'Αποστολή...' : 'Αποστολή'}
             </Button>
           </div>
         </div>

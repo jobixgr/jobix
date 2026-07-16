@@ -120,3 +120,165 @@ alter table app_users add column if not exists verify_token text;
 
 create index if not exists idx_app_users_reset_token on app_users (reset_token);
 create index if not exists idx_app_users_verify_token on app_users (verify_token);
+
+-- ============================================================
+-- ATOMIC PROPOSAL ACCEPTANCE (launch blocker #4)
+-- Τρέξε το στο Supabase SQL Editor.
+--
+-- ΠΡΟΒΛΗΜΑ που λύνει:
+--  (α) Δύο ταυτόχρονα κλικ «Αποδοχή» δημιουργούσαν ΔΥΟ έργα.
+--  (β) Αν έσκαγε στη μέση, έμενε έργο χωρίς εργασίες/πληρωμές.
+-- ΛΥΣΗ: ένα μοναδικό index + μία function που τρέχει ΟΛΑ σε μία transaction.
+--       Είτε ολοκληρώνονται όλα, είτε δεν αλλάζει τίποτα.
+-- ============================================================
+
+-- 1) Μοναδικότητα: ΑΔΥΝΑΤΟΝ να υπάρχουν δύο έργα για την ίδια προσφορά.
+--    Αυτό είναι η τελική γραμμή άμυνας — ακόμα κι αν ο κώδικας έχει bug.
+create unique index if not exists idx_projects_unique_proposal
+  on projects ((data->>'proposal_id'))
+  where data->>'proposal_id' is not null;
+
+-- 2) Atomic αποδοχή προσφοράς.
+create or replace function accept_proposal(p_proposal_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_prop      record;
+  v_data      jsonb;
+  v_org       uuid;
+  v_by        text;
+  v_project   uuid;
+  v_item      record;
+  v_today     text := to_char(now(), 'YYYY-MM-DD');
+  v_existing  uuid;
+begin
+  -- Κλείδωμα της γραμμής: αν έρθει δεύτερο request, περιμένει εδώ.
+  select * into v_prop from proposals where id = p_proposal_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  v_data := coalesce(v_prop.data, '{}'::jsonb);
+  v_org  := v_prop.organization_id;
+  v_by   := coalesce(v_data->>'created_by', 'system');
+
+  -- Αν έχει ήδη απαντηθεί, μην κάνεις τίποτα (idempotent).
+  if v_data->>'status' in ('accepted', 'rejected') then
+    return jsonb_build_object('ok', false, 'error', 'already_answered',
+                              'status', v_data->>'status');
+  end if;
+
+  -- Αν υπάρχει ήδη έργο (π.χ. από προηγούμενη μισή προσπάθεια), επίστρεψέ το.
+  select id into v_existing from projects
+   where data->>'proposal_id' = p_proposal_id::text limit 1;
+  if v_existing is not null then
+    update proposals
+       set data = v_data || jsonb_build_object('status','accepted',
+                    'responded_at', now()::text, 'accepted_at', now()::text),
+           updated_date = now()
+     where id = p_proposal_id;
+    return jsonb_build_object('ok', true, 'project_id', v_existing, 'reused', true);
+  end if;
+
+  -- (α) Ενημέρωση προσφοράς
+  update proposals
+     set data = v_data || jsonb_build_object('status','accepted',
+                  'responded_at', now()::text, 'accepted_at', now()::text),
+         updated_date = now()
+   where id = p_proposal_id;
+
+  -- (β) Δημιουργία έργου
+  insert into projects (organization_id, created_by, data)
+  values (v_org, v_by, jsonb_build_object(
+    'client_id',    v_data->>'client_id',
+    'proposal_id',  p_proposal_id::text,
+    'title',        v_data->>'title',
+    'description',  coalesce(v_data->>'description', 'Έργο βάσει προσφοράς'),
+    'status',       'active',
+    'start_date',   v_today,
+    'budget_total', v_data->'total',
+    'notes',        'Δημιουργήθηκε αυτόματα από αποδοχή προσφοράς #' || coalesce(v_data->>'number','')
+  ))
+  returning id into v_project;
+
+  -- (γ) Εργασίες από τις γραμμές της προσφοράς
+  for v_item in
+    select data as d from proposal_items
+     where data->>'proposal_id' = p_proposal_id::text
+  loop
+    insert into tasks (organization_id, created_by, data)
+    values (v_org, v_by, jsonb_build_object(
+      'project_id',  v_project::text,
+      'title',       v_item.d->>'description',
+      'description', case when v_item.d->>'type' = 'labor' then '🔧 Εργασία' else '📦 Υλικό' end
+                     || ' - Ποσότητα: ' || coalesce(v_item.d->>'quantity','1')
+                     || ' ' || coalesce(v_item.d->>'unit','τεμ.')
+                     || ', Τιμή: €' || coalesce(v_item.d->>'unit_price','0'),
+      'status',      'todo',
+      'priority',    'medium'
+    ));
+  end loop;
+
+  -- (δ) Προκαταβολή, αν υπάρχει
+  if (v_data->>'has_advance')::boolean is true
+     and coalesce((v_data->>'advance_amount')::numeric, 0) > 0 then
+    insert into payments (organization_id, created_by, data)
+    values (v_org, v_by, jsonb_build_object(
+      'project_id', v_project::text,
+      'client_id',  v_data->>'client_id',
+      'title',      'Προκαταβολή για ' || coalesce(v_data->>'title',''),
+      'amount',     v_data->'advance_amount',
+      'currency',   coalesce(v_data->>'currency','EUR'),
+      'due_date',   coalesce(v_data->>'advance_received_at', v_today),
+      'status',     'paid',
+      'paid_at',    coalesce(v_data->>'advance_received_at', now()::text),
+      'method',     'bank_transfer',
+      'notes',      'Προκαταβολή από προσφορά #' || coalesce(v_data->>'number','')
+    ));
+  end if;
+
+  return jsonb_build_object('ok', true, 'project_id', v_project, 'reused', false);
+end;
+$$;
+
+-- ============================================================
+-- PUBLIC PROJECT TOKEN (launch blocker #6)
+-- Τρέξε το στο Supabase SQL Editor.
+--
+-- ΠΡΟΒΛΗΜΑ που λύνει: το δημόσιο link έργου ήταν /publicprojectview/<UUID>.
+-- Όποιος αποκτούσε το UUID (από logs, screenshot, ιστορικό browser) έβλεπε
+-- έργο, εργασίες, ΠΛΗΡΩΜΕΣ και ΑΡΧΕΙΑ — χωρίς καμία αυθεντικοποίηση.
+-- ΛΥΣΗ: τυχαίο token ανά έργο (όπως ήδη κάνουν οι προσφορές). Το token
+-- μπορεί να ανακληθεί/αλλάξει χωρίς να αλλάξει το ίδιο το έργο.
+-- ============================================================
+create table if not exists project_links (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  created_by text,
+  data jsonb not null default '{}'::jsonb,
+  created_date timestamptz not null default now(),
+  updated_date timestamptz not null default now()
+);
+
+create index if not exists idx_project_links_token
+  on project_links ((data->>'token'));
+create unique index if not exists idx_project_links_unique_project
+  on project_links ((data->>'project_id'));
+
+-- ============================================================
+-- PRIVATE STORAGE (launch blocker #5)
+-- Τρέξε το στο Supabase SQL Editor.
+--
+-- ΠΡΟΒΛΗΜΑ που λύνει: το bucket ήταν PUBLIC — όποιος αποκτούσε το URL ενός
+-- αρχείου (φωτογραφία έργου, τιμολόγιο, έγγραφο πελάτη) το κατέβαζε ελεύθερα.
+-- ΛΥΣΗ: private bucket. Η πρόσβαση γίνεται μόνο με προσωρινά signed URLs
+-- που εκδίδει ο server μετά από έλεγχο δικαιωμάτων.
+-- ============================================================
+update storage.buckets set public = false where id = 'jobix-uploads';
+
+-- Αν το bucket δεν υπάρχει ακόμα, δημιούργησέ το ως private:
+insert into storage.buckets (id, name, public)
+values ('jobix-uploads', 'jobix-uploads', false)
+on conflict (id) do update set public = false;
