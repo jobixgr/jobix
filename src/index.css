@@ -156,3 +156,21 @@ button:focus-visible {
     @apply bg-background text-foreground;
   }
 }
+
+/* ------------------------------------------------------------------
+   Κοινά styles της μάρκας.
+   ΠΡΟΣΟΧΗ: ΠΡΕΠΕΙ να είναι εδώ (global) και ΟΧΙ μέσα στο Layout.
+   Οι δημόσιες σελίδες (προσφορά Care, δημόσιο έργο, portal πελάτη)
+   ΔΕΝ περνούν από το Layout — αν οριστούν εκεί, τα κουμπιά τους
+   εμφανίζονται άχρωμα/μαύρα στον πελάτη.
+   ------------------------------------------------------------------ */
+.gradient-bg {
+  background-image: linear-gradient(135deg, #0052CC 0%, #2684FF 100%);
+}
+
+.gradient-text {
+  background-image: linear-gradient(135deg, #0052CC 0%, #2684FF 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}

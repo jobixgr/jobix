@@ -5,11 +5,12 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useToast } from '@/components/ui/use-toast';
-import { CarePlan, CareContract, CareVisit, Client, User } from '@/api/entities';
+import { CarePlan, CareContract, CareVisit, Client, User, Organization } from '@/api/entities';
 import CarePlanDialog from '@/components/care/CarePlanDialog';
 import CareContractDialog from '@/components/care/CareContractDialog';
 import CareVisitDialog from '@/components/care/CareVisitDialog';
-import { getCareShareLink, activateCareContract, deleteCareContract, cancelCareContract } from '@/api/functions';
+import CareShareDialog from '@/components/care/CareShareDialog';
+import { activateCareContract, deleteCareContract, cancelCareContract } from '@/api/functions';
 import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
@@ -20,7 +21,7 @@ import {
 import {
   Plus, ShieldCheck, Calendar, Users, Euro, TrendingUp,
   Pencil, Clock, CheckCircle2, CalendarPlus, AlertTriangle,
-  Link2, Check, Loader2, Zap, MoreVertical, Trash2, XCircle,
+  Check, Loader2, Zap, MoreVertical, Trash2, XCircle, Send,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { el } from 'date-fns/locale';
@@ -44,8 +45,9 @@ export default function Care() {
   const [contractDialog, setContractDialog] = useState({ open: false });
   const [visitDialog, setVisitDialog] = useState({ open: false, visit: null });
   const [busyId, setBusyId] = useState(null);
-  const [copiedId, setCopiedId] = useState(null);
   const [confirm, setConfirm] = useState({ open: false, contract: null, mode: null });
+  const [shareDialog, setShareDialog] = useState({ open: false, contract: null });
+  const [orgName, setOrgName] = useState('');
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -63,6 +65,10 @@ export default function Care() {
       setContracts(c || []);
       setVisits(v || []);
       setClients(cl || []);
+      // Το όνομα της εταιρείας μπαίνει ως υπογραφή στο μήνυμα προς τον πελάτη.
+      Organization.get(user.organization_id)
+        .then((o) => setOrgName(o?.name || ''))
+        .catch(() => {});
     } catch (e) {
       toast({ title: 'Σφάλμα', description: 'Αποτυχία φόρτωσης.', variant: 'destructive' });
     } finally {
@@ -73,34 +79,6 @@ export default function Care() {
   useEffect(() => { load(); }, [load]);
 
   const clientName = (id) => clients.find((c) => c.id === id)?.name || 'Άγνωστος πελάτης';
-
-  // Αντιγράφει τον δημόσιο σύνδεσμο για αποστολή στον πελάτη.
-  const handleCopyLink = async (contract) => {
-    if (busyId) return;
-    setBusyId(contract.id);
-    try {
-      const { url } = await getCareShareLink({ contractId: contract.id });
-      // Το clipboard API απαιτεί secure context — αν αποτύχει, δείξε το URL
-      // ώστε ο χρήστης να μπορεί να το αντιγράψει χειροκίνητα.
-      try {
-        await navigator.clipboard.writeText(url);
-        setCopiedId(contract.id);
-        setTimeout(() => setCopiedId(null), 2000);
-        toast({
-          title: 'Ο σύνδεσμος αντιγράφηκε!',
-          description: 'Στείλ\' τον στον πελάτη με SMS, Viber ή email.',
-        });
-      } catch {
-        toast({ title: 'Ο σύνδεσμος', description: url, duration: 15000 });
-      }
-      // Ανανέωση: το status μπορεί να άλλαξε σε «Στάλθηκε».
-      if (contract.status === 'draft') await load();
-    } catch (e) {
-      toast({ title: 'Σφάλμα', description: e.message || 'Αποτυχία.', variant: 'destructive' });
-    } finally {
-      setBusyId(null);
-    }
-  };
 
   // Ακύρωση ή διαγραφή — εκτελείται μετά από επιβεβαίωση.
   const handleConfirm = async () => {
@@ -341,20 +319,12 @@ export default function Care() {
                           <Button
                             size="sm"
                             variant="outline"
-                            onClick={() => handleCopyLink(c)}
+                            onClick={() => setShareDialog({ open: true, contract: c })}
                             disabled={busyId === c.id}
                             className="flex-1 sm:flex-initial"
                           >
-                            {busyId === c.id ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : copiedId === c.id ? (
-                              <Check className="w-4 h-4 text-emerald-600" />
-                            ) : (
-                              <Link2 className="w-4 h-4" />
-                            )}
-                            <span className="ml-2 sm:hidden md:inline">
-                              {copiedId === c.id ? 'Αντιγράφηκε' : 'Σύνδεσμος'}
-                            </span>
+                            <Send className="w-4 h-4" />
+                            <span className="ml-2 sm:hidden md:inline">Αποστολή</span>
                           </Button>
 
                           {c.status === 'draft' && (
@@ -586,6 +556,14 @@ export default function Care() {
         </AlertDialogContent>
       </AlertDialog>
 
+      <CareShareDialog
+        open={shareDialog.open}
+        onOpenChange={(o) => setShareDialog({ open: o, contract: o ? shareDialog.contract : null })}
+        contract={shareDialog.contract}
+        client={shareDialog.contract ? clients.find((c) => c.id === shareDialog.contract.client_id) : null}
+        orgName={orgName}
+        onSent={load}
+      />
       <CareVisitDialog
         open={visitDialog.open}
         onOpenChange={(o) => setVisitDialog({ open: o, visit: o ? visitDialog.visit : null })}

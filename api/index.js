@@ -748,6 +748,12 @@ export default async function handler(req, res) {
     if (action === 'proposal-response') {
       const link = toClient(first(await supa.select('proposal_links', { 'data->>token': `eq.${String(body.token || '')}` })));
       if (!link) return send(res, 404, { error: 'Ο σύνδεσμος δεν είναι έγκυρος.' });
+      // ΑΣΦΑΛΕΙΑ: ο ίδιος έλεγχος λήξης που κάνει και η προβολή. Χωρίς αυτόν,
+      // κάποιος με παλιό link μπορούσε να στείλει απευθείας POST και να
+      // αποδεχτεί προσφορά που έχει λήξει (π.χ. με παλιά, χαμηλότερη τιμή).
+      if (link.expires_at && new Date(link.expires_at) < new Date()) {
+        return send(res, 410, { error: 'Ο σύνδεσμος της προσφοράς έχει λήξει.' });
+      }
       const proposalRow = first(await supa.select('proposals', { id: `eq.${link.proposal_id}` }));
       const proposal = toClient(proposalRow);
       if (!proposal) return send(res, 404, { error: 'Η προσφορά δεν βρέθηκε.' });

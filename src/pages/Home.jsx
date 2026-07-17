@@ -115,15 +115,16 @@ export default function HomePage() {
             <div className="lg:grid lg:grid-cols-12 lg:gap-16 items-center">
               <div className="lg:col-span-6 text-center lg:text-left">
                 <Badge className="bg-blue-100 text-blue-800 px-3 py-1.5 text-sm font-semibold rounded-full mb-4">
-                  Νέο: Δωρεάν δοκιμή για 1 μήνα! 🚀
+                  Νέο: Jobix Care — συμβόλαια συντήρησης 🔄
                 </Badge>
                 <h2 className="text-4xl lg:text-6xl font-extrabold text-slate-900 mb-6 leading-tight tracking-tight">
-                  Το απόλυτο εργαλείο για
-                  <span className="block bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">μάστορες & τεχνίτες</span>
+                  Σταθερό έσοδο από τους
+                  <span className="block bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent">πελάτες που ήδη έχεις</span>
                 </h2>
                 <p className="text-lg text-slate-600 mb-8 max-w-2xl mx-auto lg:mx-0">
-                  Διαχειρίσου πελάτες, προσφορές και τιμολόγια εύκολα, όλα σε ένα μέρος.
-                  Γίνε πιο επαγγελματίας και αύξησε τα κέρδη σου.
+                  <strong className="text-slate-800">Το Jobix θυμάται πότε χρειάζεται ξανά service κάθε πελάτης</strong>
+                  {' '}και σε βοηθά να κλείσεις την επόμενη δουλειά — αυτόματα.
+                  Προσφορές, έργα, πελάτες και συμβόλαια συντήρησης σε μία απλή εφαρμογή για τεχνίτες.
                 </p>
 
                 <div className="flex flex-col sm:flex-row gap-4 mb-8 justify-center lg:justify-start">
@@ -131,21 +132,21 @@ export default function HomePage() {
                     size="lg"
                     onClick={handleSignup}
                     disabled={isLoadingSignup || isLoadingLogin}
-                    className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white px-8 py-3 text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1"
+                    className="bg-gradient-to-br from-blue-600 to-indigo-600 text-white h-auto min-h-12 px-5 sm:px-8 py-3 text-base sm:text-lg font-semibold rounded-xl shadow-xl hover:shadow-2xl transition-all duration-300 transform hover:-translate-y-1 whitespace-normal text-center"
                   >
                     {isLoadingSignup ? (
                       <Loader2 className="w-5 h-5 animate-spin mr-2" />
                     ) : (
                       <ArrowRight className="w-5 h-5 mr-2" />
                     )}
-                    Ξεκινήστε δωρεάν δοκιμή για 1 μήνα
+                    Ξεκινήστε δωρεάν
                   </Button>
                   <Button
                     size="lg"
                     variant="outline"
                     onClick={handleLogin}
                     disabled={isLoadingLogin || isLoadingSignup}
-                    className="px-8 py-3 text-lg font-semibold rounded-xl border-2 border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-300"
+                    className="h-auto min-h-12 px-5 sm:px-8 py-3 text-base sm:text-lg font-semibold rounded-xl border-2 border-slate-200 hover:border-blue-300 hover:bg-blue-50 transition-all duration-300 whitespace-normal"
                   >
                     {isLoadingLogin ? (
                       <Loader2 className="w-5 h-5 animate-spin" />
