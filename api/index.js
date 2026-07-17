@@ -606,6 +606,97 @@ export default async function handler(req, res) {
       return send(res, 200, { client, projects, invoices, invoiceItems, files });
     }
 
+    // ---------- PUBLIC CARE OFFER ----------
+    // Ο πελάτης βλέπει την προσφορά συντήρησης με token (χωρίς λογαριασμό).
+    if (action === 'care-offer') {
+      const token = String(body.token || '').trim();
+      if (!token) return send(res, 400, { error: 'Λείπει ο σύνδεσμος.' });
+      const link = toClient(first(await supa.select('care_links', { 'data->>token': `eq.${token}` })));
+      if (!link) return send(res, 404, { error: 'Ο σύνδεσμος δεν είναι έγκυρος.' });
+
+      const contract = toClient(first(await supa.select('care_contracts', { id: `eq.${link.contract_id}` })));
+      if (!contract) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+
+      const org = toClient(first(await supa.select('organizations', { id: `eq.${contract.organization_id}` })));
+      const client = toClient(first(await supa.select('clients', { id: `eq.${contract.client_id}` })));
+
+      // Επιστρέφουμε ΜΟΝΟ ό,τι χρειάζεται ο πελάτης — όχι εσωτερικά πεδία.
+      return send(res, 200, {
+        contract: {
+          id: contract.id,
+          plan_name: contract.plan_name,
+          price: contract.price,
+          currency: contract.currency || 'EUR',
+          duration_months: contract.duration_months,
+          visits_total: contract.visits_total,
+          benefits: contract.benefits || [],
+          start_date: contract.start_date,
+          end_date: contract.end_date,
+          status: contract.status,
+        },
+        client: client ? { name: client.name } : null,
+        organization: org
+          ? { name: org.name, phone: org.phone, email: org.email, logo_url: org.logo_url }
+          : null,
+      });
+    }
+
+    // Αποδοχή από τον πελάτη → ενεργοποιεί το συμβόλαιο (atomic).
+    if (action === 'care-accept') {
+      if (await enforceRateLimit(req, res, { name: 'care-accept', identifier: clientIp(req), limit: 10, windowSec: 3600 })) return;
+      const token = String(body.token || '').trim();
+      if (!token) return send(res, 400, { error: 'Λείπει ο σύνδεσμος.' });
+      const link = toClient(first(await supa.select('care_links', { 'data->>token': `eq.${token}` })));
+      if (!link) return send(res, 404, { error: 'Ο σύνδεσμος δεν είναι έγκυρος.' });
+
+      const cRow = first(await supa.select('care_contracts', { id: `eq.${link.contract_id}` }));
+      const contract = toClient(cRow);
+      if (!contract) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+      if (contract.status === 'cancelled') {
+        return send(res, 409, { error: 'Το συμβόλαιο έχει ακυρωθεί.' });
+      }
+      if (contract.status === 'active') {
+        return send(res, 409, { error: 'Το πρόγραμμα είναι ήδη ενεργό.', status: 'active' });
+      }
+
+      let result;
+      try {
+        result = await rpc('activate_care_contract', { p_contract_id: contract.id });
+      } catch (e) {
+        console.error('care accept RPC error:', e);
+        return send(res, 500, {
+          error: 'Η αποδοχή δεν ολοκληρώθηκε. Δεν έγινε καμία αλλαγή — δοκιμάστε ξανά.',
+        });
+      }
+      if (!result?.ok) return send(res, 500, { error: 'Η αποδοχή δεν ολοκληρώθηκε.' });
+
+      // Σημείωσε ΠΟΤΕ αποδέχτηκε ο πελάτης (ιστορικό/νομική τεκμηρίωση).
+      const fresh = first(await supa.select('care_contracts', { id: `eq.${contract.id}` }));
+      if (fresh) {
+        await supa.update('care_contracts', fresh.id, {
+          data: { ...(fresh.data || {}), accepted_at: now(), accepted_by_client: true },
+          updated_date: now(),
+        }).catch((e) => console.error('accept stamp failed:', e));
+      }
+
+      // Ειδοποίηση στον τεχνίτη — δεν μπλοκάρει την αποδοχή αν αποτύχει.
+      try {
+        const org = toClient(first(await supa.select('organizations', { id: `eq.${contract.organization_id}` })));
+        const client = toClient(first(await supa.select('clients', { id: `eq.${contract.client_id}` })));
+        if (org?.email) {
+          await sendEmail({
+            to: org.email,
+            subject: `Νέο συμβόλαιο Care: ${contract.plan_name}`,
+            body: `Καλά νέα!\n\nΟ πελάτης ${client?.name || ''} αποδέχτηκε το πρόγραμμα "${contract.plan_name}" (€${contract.price}).\n\nΔημιουργήθηκαν ${result.visits_created || contract.visits_total} επισκέψεις στο Jobix Care.\n\n${APP_URL}/care`,
+          });
+        }
+      } catch (e) {
+        console.error('care accept notify failed:', e);
+      }
+
+      return send(res, 200, { ok: true, status: 'active', visits: result.visits_created });
+    }
+
     // ---------- PUBLIC PROJECT ----------
     // ΑΣΦΑΛΕΙΑ: δέχεται ΜΟΝΟ token, ποτέ το project id. Με το id, οποιοσδήποτε
     // το αποκτούσε (logs, screenshot, ιστορικό) έβλεπε πληρωμές και αρχεία.
@@ -748,6 +839,66 @@ export default async function handler(req, res) {
     // ============ JOBIX CARE ============
 
     // Ενεργοποίηση συμβολαίου: δημιουργεί ΑΤΟΜΙΚΑ όλες τις επισκέψεις.
+    // Οριστική διαγραφή συμβολαίου + ό,τι κρέμεται από αυτό (επισκέψεις,
+    // ραντεβού στην Ατζέντα, δημόσιος σύνδεσμος). Atomic μέσω SQL function.
+    if (action === 'deleteCareContract') {
+      const row = first(await supa.select('care_contracts', { id: `eq.${body.contractId}` }));
+      if (!row || !owns(user, row)) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+
+      let result;
+      try {
+        result = await rpc('delete_care_contract', { p_contract_id: row.id });
+      } catch (e) {
+        console.error('delete_care_contract RPC error:', e);
+        return send(res, 500, { error: 'Η διαγραφή δεν ολοκληρώθηκε. Δεν έγινε καμία αλλαγή.' });
+      }
+      if (!result?.ok) return send(res, 400, { error: 'Η διαγραφή απέτυχε.' });
+      return send(res, 200, result);
+    }
+
+    // Ακύρωση ενεργού συμβολαίου: κρατά το ιστορικό αλλά σταματά τις
+    // εκκρεμείς επισκέψεις και απενεργοποιεί τον δημόσιο σύνδεσμο.
+    if (action === 'cancelCareContract') {
+      const row = first(await supa.select('care_contracts', { id: `eq.${body.contractId}` }));
+      if (!row || !owns(user, row)) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
+      const c = toClient(row);
+      if (c.status === 'cancelled') return send(res, 409, { error: 'Είναι ήδη ακυρωμένο.' });
+
+      await supa.update('care_contracts', row.id, {
+        data: { ...(row.data || {}), status: 'cancelled', cancelled_at: now(), cancel_reason: body.reason || '' },
+        updated_date: now(),
+      });
+
+      // Οι εκκρεμείς επισκέψεις δεν έχουν πια νόημα.
+      const visits = (await supa.select('care_visits', { 'data->>contract_id': `eq.${row.id}` }));
+      for (const vRow of visits) {
+        const v = toClient(vRow);
+        if (v.status === 'completed') continue;  // το ιστορικό μένει
+        await supa.update('care_visits', v.id, {
+          data: { ...(vRow.data || {}), status: 'cancelled' },
+          updated_date: now(),
+        }).catch((e) => console.error('cancel visit failed:', e));
+        // Και το ραντεβού στην Ατζέντα, αν είχε κλειστεί.
+        if (v.appointment_id) {
+          const apRow = first(await supa.select('appointments', { id: `eq.${v.appointment_id}` }));
+          if (apRow) {
+            await supa.update('appointments', apRow.id, {
+              data: { ...(apRow.data || {}), status: 'cancelled' },
+              updated_date: now(),
+            }).catch(() => {});
+          }
+        }
+      }
+
+      // Ο δημόσιος σύνδεσμος δεν πρέπει να δουλεύει πια.
+      const links = await supa.select('care_links', { 'data->>contract_id': `eq.${row.id}` });
+      for (const l of links) {
+        await supa.remove('care_links', l.id).catch(() => {});
+      }
+
+      return send(res, 200, { ok: true });
+    }
+
     if (action === 'activateCareContract') {
       const row = first(await supa.select('care_contracts', { id: `eq.${body.contractId}` }));
       if (!row || !owns(user, row)) return send(res, 404, { error: 'Το συμβόλαιο δεν βρέθηκε.' });
@@ -776,7 +927,17 @@ export default async function handler(req, res) {
           data: { contract_id: row.id, token: crypto.randomUUID() },
         }));
       }
-      return send(res, 200, { url: `${APP_URL}/care?token=${link.token}`, token: link.token });
+
+      // Πρόχειρο → «Στάλθηκε», ώστε ο τεχνίτης να ξέρει ποια έστειλε.
+      // (Δεν αλλάζει αν είναι ήδη ενεργό/ακυρωμένο.)
+      if ((row.data || {}).status === 'draft') {
+        await supa.update('care_contracts', row.id, {
+          data: { ...(row.data || {}), status: 'sent', sent_at: now() },
+          updated_date: now(),
+        }).catch((e) => console.error('mark sent failed:', e));
+      }
+
+      return send(res, 200, { url: `${APP_URL}/careoffer?token=${link.token}`, token: link.token });
     }
 
     // Ολοκλήρωση επίσκεψης: μετράει και το υπόλοιπο του συμβολαίου.

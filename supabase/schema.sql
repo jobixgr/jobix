@@ -406,3 +406,45 @@ begin
   return jsonb_build_object('ok', true, 'visits_created', v_created, 'reused', false);
 end;
 $$;
+
+-- ------------------------------------------------------------
+-- Διαγραφή συμβολαίου Care — ΑΤΟΜΙΚΑ, μαζί με ό,τι κρέμεται από αυτό.
+-- Χωρίς αυτό, η διαγραφή θα άφηνε ορφανές επισκέψεις και ραντεβού
+-- στην Ατζέντα που δεν θα μπορούσε να σβήσει ποτέ κανείς.
+-- ------------------------------------------------------------
+create or replace function delete_care_contract(p_contract_id uuid)
+returns jsonb
+language plpgsql
+security definer
+as $$
+declare
+  v_c        record;
+  v_visits   int := 0;
+  v_appts    int := 0;
+begin
+  select * into v_c from care_contracts where id = p_contract_id for update;
+  if not found then
+    return jsonb_build_object('ok', false, 'error', 'not_found');
+  end if;
+
+  -- 1) Τα ραντεβού που δημιουργήθηκαν από τις επισκέψεις αυτού του συμβολαίου
+  with vs as (
+    select id from care_visits where data->>'contract_id' = p_contract_id::text
+  )
+  delete from appointments a
+   where a.data->>'care_visit_id' in (select id::text from vs);
+  get diagnostics v_appts = row_count;
+
+  -- 2) Οι επισκέψεις
+  delete from care_visits where data->>'contract_id' = p_contract_id::text;
+  get diagnostics v_visits = row_count;
+
+  -- 3) Ο δημόσιος σύνδεσμος (ώστε να μη δουλεύει πια)
+  delete from care_links where data->>'contract_id' = p_contract_id::text;
+
+  -- 4) Το ίδιο το συμβόλαιο
+  delete from care_contracts where id = p_contract_id;
+
+  return jsonb_build_object('ok', true, 'visits_deleted', v_visits, 'appointments_deleted', v_appts);
+end;
+$$;

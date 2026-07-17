@@ -9,9 +9,18 @@ import { CarePlan, CareContract, CareVisit, Client, User } from '@/api/entities'
 import CarePlanDialog from '@/components/care/CarePlanDialog';
 import CareContractDialog from '@/components/care/CareContractDialog';
 import CareVisitDialog from '@/components/care/CareVisitDialog';
+import { getCareShareLink, activateCareContract, deleteCareContract, cancelCareContract } from '@/api/functions';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import {
   Plus, ShieldCheck, Calendar, Users, Euro, TrendingUp,
   Pencil, Clock, CheckCircle2, CalendarPlus, AlertTriangle,
+  Link2, Check, Loader2, Zap, MoreVertical, Trash2, XCircle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { el } from 'date-fns/locale';
@@ -34,6 +43,9 @@ export default function Care() {
   const [planDialog, setPlanDialog] = useState({ open: false, plan: null });
   const [contractDialog, setContractDialog] = useState({ open: false });
   const [visitDialog, setVisitDialog] = useState({ open: false, visit: null });
+  const [busyId, setBusyId] = useState(null);
+  const [copiedId, setCopiedId] = useState(null);
+  const [confirm, setConfirm] = useState({ open: false, contract: null, mode: null });
 
   const load = useCallback(async () => {
     setIsLoading(true);
@@ -61,6 +73,104 @@ export default function Care() {
   useEffect(() => { load(); }, [load]);
 
   const clientName = (id) => clients.find((c) => c.id === id)?.name || 'Άγνωστος πελάτης';
+
+  // Αντιγράφει τον δημόσιο σύνδεσμο για αποστολή στον πελάτη.
+  const handleCopyLink = async (contract) => {
+    if (busyId) return;
+    setBusyId(contract.id);
+    try {
+      const { url } = await getCareShareLink({ contractId: contract.id });
+      // Το clipboard API απαιτεί secure context — αν αποτύχει, δείξε το URL
+      // ώστε ο χρήστης να μπορεί να το αντιγράψει χειροκίνητα.
+      try {
+        await navigator.clipboard.writeText(url);
+        setCopiedId(contract.id);
+        setTimeout(() => setCopiedId(null), 2000);
+        toast({
+          title: 'Ο σύνδεσμος αντιγράφηκε!',
+          description: 'Στείλ\' τον στον πελάτη με SMS, Viber ή email.',
+        });
+      } catch {
+        toast({ title: 'Ο σύνδεσμος', description: url, duration: 15000 });
+      }
+      // Ανανέωση: το status μπορεί να άλλαξε σε «Στάλθηκε».
+      if (contract.status === 'draft') await load();
+    } catch (e) {
+      toast({ title: 'Σφάλμα', description: e.message || 'Αποτυχία.', variant: 'destructive' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Ακύρωση ή διαγραφή — εκτελείται μετά από επιβεβαίωση.
+  const handleConfirm = async () => {
+    const { contract, mode } = confirm;
+    if (!contract) return;
+    setBusyId(contract.id);
+    setConfirm({ open: false, contract: null, mode: null });
+    try {
+      if (mode === 'delete') {
+        const res = await deleteCareContract({ contractId: contract.id });
+        toast({
+          title: 'Διαγράφηκε',
+          description: res.visits_deleted
+            ? `Αφαιρέθηκαν ${res.visits_deleted} επισκέψεις${res.appointments_deleted ? ` και ${res.appointments_deleted} ραντεβού` : ''}.`
+            : 'Το συμβόλαιο αφαιρέθηκε.',
+        });
+      } else {
+        await cancelCareContract({ contractId: contract.id });
+        toast({
+          title: 'Ακυρώθηκε',
+          description: 'Οι εκκρεμείς επισκέψεις σταμάτησαν. Το ιστορικό διατηρείται.',
+        });
+      }
+      await load();
+    } catch (e) {
+      toast({ title: 'Σφάλμα', description: e.message || 'Απέτυχε.', variant: 'destructive' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Διαγραφή πακέτου. ΠΡΟΣΟΧΗ: τα υπάρχοντα συμβόλαια κρατούν αντίγραφο
+  // (snapshot) των στοιχείων, οπότε ΔΕΝ σπάνε. Παρόλα αυτά προειδοποιούμε.
+  const handleDeletePlan = async (plan) => {
+    const inUse = contracts.filter((c) => c.plan_id === plan.id).length;
+    const msg = inUse
+      ? `Το πακέτο "${plan.name}" χρησιμοποιείται σε ${inUse} ${inUse === 1 ? 'συμβόλαιο' : 'συμβόλαια'}.\n\nΤα υπάρχοντα συμβόλαια ΔΕΝ θα επηρεαστούν (κρατούν δικό τους αντίγραφο), αλλά δεν θα μπορείς να το ξαναχρησιμοποιήσεις.\n\nΔιαγραφή;`
+      : `Διαγραφή του πακέτου "${plan.name}";`;
+    if (!window.confirm(msg)) return;
+    setBusyId(plan.id);
+    try {
+      await CarePlan.delete(plan.id);
+      toast({ title: 'Διαγράφηκε', description: `Το πακέτο "${plan.name}" αφαιρέθηκε.` });
+      await load();
+    } catch (e) {
+      toast({ title: 'Σφάλμα', description: e.message || 'Η διαγραφή απέτυχε.', variant: 'destructive' });
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Ενεργοποίηση χωρίς να περιμένεις τον πελάτη (π.χ. συμφωνήσατε προφορικά).
+  const handleActivate = async (contract) => {
+    if (busyId) return;
+    setBusyId(contract.id);
+    try {
+      const res = await activateCareContract({ contractId: contract.id });
+      toast({
+        title: 'Ενεργοποιήθηκε!',
+        description: res.visits_created
+          ? `Δημιουργήθηκαν ${res.visits_created} επισκέψεις.`
+          : 'Το συμβόλαιο είναι ενεργό.',
+      });
+      await load();
+    } catch (e) {
+      toast({ title: 'Σφάλμα', description: e.message || 'Η ενεργοποίηση απέτυχε.', variant: 'destructive' });
+    } finally {
+      setBusyId(null);
+    }
+  };
 
   // --- Στατιστικά εσόδων ---
   const activeContracts = contracts.filter((c) => c.status === 'active');
@@ -225,6 +335,68 @@ export default function Care() {
                             )}
                           </div>
                         </div>
+
+                        {/* Δράσεις */}
+                        <div className="flex gap-2 shrink-0">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleCopyLink(c)}
+                            disabled={busyId === c.id}
+                            className="flex-1 sm:flex-initial"
+                          >
+                            {busyId === c.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : copiedId === c.id ? (
+                              <Check className="w-4 h-4 text-emerald-600" />
+                            ) : (
+                              <Link2 className="w-4 h-4" />
+                            )}
+                            <span className="ml-2 sm:hidden md:inline">
+                              {copiedId === c.id ? 'Αντιγράφηκε' : 'Σύνδεσμος'}
+                            </span>
+                          </Button>
+
+                          {c.status === 'draft' && (
+                            <Button
+                              size="sm"
+                              onClick={() => handleActivate(c)}
+                              disabled={busyId === c.id}
+                              className="gradient-bg text-white flex-1 sm:flex-initial"
+                            >
+                              <Zap className="w-4 h-4" />
+                              <span className="ml-2 sm:hidden md:inline">Ενεργοποίηση</span>
+                            </Button>
+                          )}
+
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button size="sm" variant="ghost" disabled={busyId === c.id}>
+                                <MoreVertical className="w-4 h-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              {c.status === 'active' && (
+                                <>
+                                  <DropdownMenuItem
+                                    onClick={() => setConfirm({ open: true, contract: c, mode: 'cancel' })}
+                                  >
+                                    <XCircle className="w-4 h-4 mr-2" />
+                                    Ακύρωση συμβολαίου
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                </>
+                              )}
+                              <DropdownMenuItem
+                                className="text-red-600 focus:text-red-600"
+                                onClick={() => setConfirm({ open: true, contract: c, mode: 'delete' })}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Οριστική διαγραφή
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -263,9 +435,19 @@ export default function Care() {
                           </span>
                         </p>
                       </div>
-                      <Button variant="ghost" size="icon" onClick={() => setPlanDialog({ open: true, plan: p })}>
-                        <Pencil className="w-4 h-4" />
-                      </Button>
+                      <div className="flex gap-1 shrink-0">
+                        <Button variant="ghost" size="icon" onClick={() => setPlanDialog({ open: true, plan: p })}>
+                          <Pencil className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-red-500 hover:text-red-600 hover:bg-red-50"
+                          onClick={() => handleDeletePlan(p)}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </div>
                     <p className="text-sm text-slate-500 mt-2">
                       {p.visits_count} {p.visits_count === 1 ? 'επίσκεψη' : 'επισκέψεις'}
@@ -362,6 +544,48 @@ export default function Care() {
         existingPlan={planDialog.plan}
         onSaved={load}
       />
+      <AlertDialog
+        open={confirm.open}
+        onOpenChange={(o) => !o && setConfirm({ open: false, contract: null, mode: null })}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirm.mode === 'delete' ? 'Οριστική διαγραφή;' : 'Ακύρωση συμβολαίου;'}
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                <p>
+                  <strong>{confirm.contract?.plan_name}</strong>
+                  {confirm.contract && ` — ${clientName(confirm.contract.client_id)}`}
+                </p>
+                {confirm.mode === 'delete' ? (
+                  <p>
+                    Θα διαγραφεί το συμβόλαιο, <strong>όλες οι επισκέψεις του</strong> και τα
+                    σχετικά ραντεβού από την Ατζέντα. Ο δημόσιος σύνδεσμος θα πάψει να δουλεύει.
+                    Η ενέργεια <strong>δεν αναιρείται</strong>.
+                  </p>
+                ) : (
+                  <p>
+                    Οι εκκρεμείς επισκέψεις θα σταματήσουν και ο σύνδεσμος θα πάψει να δουλεύει.
+                    Το <strong>ιστορικό των ολοκληρωμένων επισκέψεων διατηρείται</strong>.
+                  </p>
+                )}
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Άκυρο</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirm}
+              className={confirm.mode === 'delete' ? 'bg-red-600 hover:bg-red-700 text-white' : ''}
+            >
+              {confirm.mode === 'delete' ? 'Διαγραφή' : 'Ακύρωση συμβολαίου'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       <CareVisitDialog
         open={visitDialog.open}
         onOpenChange={(o) => setVisitDialog({ open: o, visit: o ? visitDialog.visit : null })}

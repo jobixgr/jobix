@@ -52,3 +52,18 @@ export const completeCareVisit = ({ visitId, notes }) =>
 /** Προγραμματίζει επίσκεψη: δημιουργεί ραντεβού στην Ατζέντα και τα συνδέει. */
 export const scheduleCareVisit = ({ visitId, appointment_date }) =>
   apiFetch('/api/functions/scheduleCareVisit', { method: 'POST', body: { visitId, appointment_date } });
+
+// --- Δημόσια (χωρίς login): προσφορά συντήρησης προς τον πελάτη ---
+export const viewCareOffer = (token) =>
+  apiFetch('/api/public/care-offer', { method: 'POST', body: { token } });
+
+export const acceptCareOffer = (token) =>
+  apiFetch('/api/public/care-accept', { method: 'POST', body: { token } });
+
+/** Οριστική διαγραφή συμβολαίου + επισκέψεων + ραντεβού (atomic). */
+export const deleteCareContract = ({ contractId }) =>
+  apiFetch('/api/functions/deleteCareContract', { method: 'POST', body: { contractId } });
+
+/** Ακύρωση ενεργού συμβολαίου — κρατά το ιστορικό. */
+export const cancelCareContract = ({ contractId, reason }) =>
+  apiFetch('/api/functions/cancelCareContract', { method: 'POST', body: { contractId, reason } });

@@ -41,6 +41,7 @@ import AdminDashboard from './admindashboard';
 import ClientPortal from './ClientPortal';
 import PublicProjectView from './PublicProjectView';
 import Care from './Care';
+import PublicCareOffer from './PublicCareOffer';
 import ProposalPDF from './ProposalPDF';
 
 // Βοηθητικό: τυλίγει προστατευμένες σελίδες στο Layout με το σωστό currentPageName.
@@ -64,13 +65,14 @@ export default function Pages() {
         <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/clientportal" element={<ClientPortal />} />
         <Route path="/publicprojectview" element={<PublicProjectView />} />
-        <Route path="/care" element={<Care />} />
+        <Route path="/careoffer" element={<PublicCareOffer />} />
         <Route path="/proposalpdf" element={<ProposalPDF />} />
 
         {/* Προστατευμένες (μέσα στο Layout) */}
         <Route path="/dashboard" element={wrap('Dashboard', Dashboard)} />
         <Route path="/onboarding" element={wrap('Onboarding', Onboarding)} />
         <Route path="/agenda" element={wrap('Agenda', Agenda)} />
+        <Route path="/care" element={wrap('Care', Care)} />
         <Route path="/proposals" element={wrap('Proposals', Proposals)} />
         <Route path="/proposalnew" element={wrap('ProposalNew', ProposalNew)} />
         <Route path="/proposaledit" element={wrap('ProposalEdit', ProposalEdit)} />

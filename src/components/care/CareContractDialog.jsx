@@ -170,8 +170,11 @@ export default function CareContractDialog({ open, onOpenChange, plans, clients,
         </div>
 
         <DialogFooter>
+          <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={isSaving}>
+            Άκυρο
+          </Button>
           <Button variant="outline" onClick={() => handleSave(false)} disabled={isSaving}>
-            Αποθήκευση ως πρόχειρο
+            Πρόχειρο
           </Button>
           <Button onClick={() => handleSave(true)} disabled={isSaving} className="gradient-bg text-white">
             {isSaving ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : null}
