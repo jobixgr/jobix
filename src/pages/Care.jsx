@@ -49,8 +49,10 @@ export default function Care() {
   const [shareDialog, setShareDialog] = useState({ open: false, contract: null });
   const [orgName, setOrgName] = useState('');
 
-  const load = useCallback(async () => {
-    setIsLoading(true);
+  // showSkeleton=false για ανανεώσεις: αλλιώς όλο το UI (και τα ανοιχτά
+  // dialogs) κάνουν unmount/remount, που προκαλεί βρόχους και «αναπήδηση».
+  const load = useCallback(async (showSkeleton = false) => {
+    if (showSkeleton) setIsLoading(true);
     try {
       const user = await User.me();
       if (!user?.organization_id) return;
@@ -76,7 +78,8 @@ export default function Care() {
     }
   }, [toast]);
 
-  useEffect(() => { load(); }, [load]);
+  // Πρώτη φόρτωση: με skeleton.
+  useEffect(() => { load(true); }, [load]);
 
   const clientName = (id) => clients.find((c) => c.id === id)?.name || 'Άγνωστος πελάτης';
 

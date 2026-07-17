@@ -21,7 +21,7 @@ export default function CareShareDialog({ open, onOpenChange, contract, client, 
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
-    if (!open || !contract) return;
+    if (!open || !contract?.id) return;
     let cancelled = false;
     setLoading(true);
     setUrl('');
@@ -36,7 +36,9 @@ export default function CareShareDialog({ open, onOpenChange, contract, client, 
           `Μπορείτε να δείτε τι περιλαμβάνει και να το αποδεχτείτε εδώ:\n${u}` +
           (orgName ? `\n\n— ${orgName}` : '')
         );
-        onSent?.();
+        // ΠΡΟΣΟΧΗ: ΔΕΝ ανανεώνουμε τη λίστα εδώ. Το load() του γονέα δείχνει
+        // skeleton → το dialog κάνει unmount → ξανα-mount → το useEffect
+        // ξανατρέχει → ατέρμων βρόχος. Η ανανέωση γίνεται στο κλείσιμο.
       })
       .catch((e) => {
         if (!cancelled) {
@@ -46,8 +48,10 @@ export default function CareShareDialog({ open, onOpenChange, contract, client, 
       })
       .finally(() => !cancelled && setLoading(false));
     return () => { cancelled = true; };
+    // Dependency ΜΟΝΟ στο id: το ίδιο το object αλλάζει reference σε κάθε
+    // ανανέωση της λίστας και θα προκαλούσε περιττά requests.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, contract]);
+  }, [open, contract?.id]);
 
   // Καθαρό τηλέφωνο για τα links (χωρίς κενά/παύλες).
   const rawPhone = (client?.phone || '').replace(/[^\d+]/g, '');
@@ -78,8 +82,15 @@ export default function CareShareDialog({ open, onOpenChange, contract, client, 
   const hasPhone = !!intlPhone;
   const hasEmail = !!client?.email;
 
+  // Η ανανέωση της λίστας γίνεται ΜΟΝΟ στο κλείσιμο — ποτέ όσο είναι ανοιχτό
+  // το dialog, γιατί το skeleton του γονέα το κάνει unmount.
+  const handleOpenChange = (o) => {
+    onOpenChange(o);
+    if (!o && url) onSent?.();  // το link δημιουργήθηκε → το status έγινε «Στάλθηκε»
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Αποστολή στον πελάτη</DialogTitle>
