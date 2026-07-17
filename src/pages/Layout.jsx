@@ -429,7 +429,7 @@ export default function Layout({ children, currentPageName }) {
                   </div>
                 )}
                 <div className="text-center mt-4">
-                  <p className="text-xs text-slate-400 font-medium">© 2024 Jobix</p>
+                  <p className="text-xs text-slate-400 font-medium">© {new Date().getFullYear()} Jobix</p>
                 </div>
               </SidebarFooter>
             </Sidebar>
@@ -460,14 +460,12 @@ export default function Layout({ children, currentPageName }) {
                 </div>
               </header>
 
-              <div className="w-full pwa-safe-area">
+              <div className="w-full pwa-safe-area pwa-content-bottom">
                 <EmailVerificationBanner />
                 <TrialStatusBanner />
                 {children}
               </div>
-
-              <div className="block lg:hidden h-20" />
-              <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg lg:hidden z-50 pwa-safe-area">
+              <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-slate-200 shadow-lg lg:hidden z-50 pwa-safe-area pwa-bottom-bar">
                 <div className="flex justify-around items-center py-2 px-1">
                   {navigationItems.slice(0, 4).map((item) => {
                     const isActive = location.pathname === item.url.split('?')[0];

@@ -36,6 +36,9 @@ export const UploadFile = async ({ file, onProgress }) => {
     const xhr = new XMLHttpRequest();
     xhr.open('PUT', uploadUrl, true);
     xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+    // ΠΡΟΣΟΧΗ: χωρίς αυτό, το ontimeout παρακάτω ΔΕΝ τρέχει ποτέ — το ανέβασμα
+    // θα κρεμούσε επ' άπειρον σε κακό σήμα. 2 λεπτά: αρκετά για 20MB με 4G.
+    xhr.timeout = 120000;
     if (onProgress) {
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));

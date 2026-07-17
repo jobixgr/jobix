@@ -1,48 +1,61 @@
-// Κεντρικό routing της εφαρμογής (πριν το παρήγαγε αυτόματα το Base44 —
-// τώρα είναι δικό μας και πλήρως επεξεργάσιμο).
+// Κεντρικό routing της εφαρμογής.
 
-import React from 'react';
+import React, { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './Layout';
 
+// ---- EAGER: όσα πρέπει να φορτώνουν ΑΜΕΣΩΣ ----
+// Η landing και το login είναι η πρώτη επαφή — δεν πρέπει να δείχνουν spinner.
 import Home from './Home';
-import Privacy from './privacy';
 import Login from './Login';
-import ForgotPassword from './ForgotPassword';
-import ResetPassword from './ResetPassword';
-import VerifyEmail from './VerifyEmail';
 
-import Dashboard from './Dashboard';
-import Onboarding from './Onboarding';
-import Agenda from './Agenda';
-import Proposals from './Proposals';
-import ProposalNew from './ProposalNew';
-import ProposalEdit from './ProposalEdit';
-import ProposalDetail from './ProposalDetail';
-import Projects from './Projects';
-import ProjectNew from './ProjectNew';
-import ProjectEdit from './ProjectEdit';
-import ProjectView from './ProjectView';
-import Clients from './Clients';
-import ClientNew from './ClientNew';
-import ClientEdit from './ClientEdit';
-import ClientView from './ClientView';
-import Invoices from './Invoices';
-import InvoiceNew from './InvoiceNew';
-import InvoiceHistory from './InvoiceHistory';
-import InvoiceView from './InvoiceView';
-import Payments from './Payments';
-import Templates from './Templates';
-import Settings from './Settings';
-import Subscription from './Subscription';
-import AdminDashboard from './admindashboard';
+// ---- LAZY: όλα τα υπόλοιπα ----
+// ΓΙΑΤΙ: πριν φορτώνονταν ΚΑΙ ΟΙ 36 σελίδες μαζί (~1.35MB), ακόμα κι αν ο
+// χρήστης πήγαινε μόνο στο login. Τώρα κατεβαίνει μόνο ό,τι χρειάζεται.
+// Τα βαριά γραφήματα (recharts) μπαίνουν μόνο με το Dashboard.
+const Privacy = lazy(() => import('./privacy'));
+const ForgotPassword = lazy(() => import('./ForgotPassword'));
+const ResetPassword = lazy(() => import('./ResetPassword'));
+const VerifyEmail = lazy(() => import('./VerifyEmail'));
+
+const Dashboard = lazy(() => import('./Dashboard'));
+const Onboarding = lazy(() => import('./Onboarding'));
+const Agenda = lazy(() => import('./Agenda'));
+const Proposals = lazy(() => import('./Proposals'));
+const ProposalNew = lazy(() => import('./ProposalNew'));
+const ProposalEdit = lazy(() => import('./ProposalEdit'));
+const ProposalDetail = lazy(() => import('./ProposalDetail'));
+const Projects = lazy(() => import('./Projects'));
+const ProjectNew = lazy(() => import('./ProjectNew'));
+const ProjectEdit = lazy(() => import('./ProjectEdit'));
+const ProjectView = lazy(() => import('./ProjectView'));
+const Clients = lazy(() => import('./Clients'));
+const ClientNew = lazy(() => import('./ClientNew'));
+const ClientEdit = lazy(() => import('./ClientEdit'));
+const ClientView = lazy(() => import('./ClientView'));
+const Invoices = lazy(() => import('./Invoices'));
+const InvoiceNew = lazy(() => import('./InvoiceNew'));
+const InvoiceHistory = lazy(() => import('./InvoiceHistory'));
+const InvoiceView = lazy(() => import('./InvoiceView'));
+const Payments = lazy(() => import('./Payments'));
+const Templates = lazy(() => import('./Templates'));
+const Settings = lazy(() => import('./Settings'));
+const Subscription = lazy(() => import('./Subscription'));
+const AdminDashboard = lazy(() => import('./admindashboard'));
+const Care = lazy(() => import('./Care'));
 
 // Δημόσιες σελίδες (χωρίς Layout / χωρίς login)
-import ClientPortal from './ClientPortal';
-import PublicProjectView from './PublicProjectView';
-import Care from './Care';
-import PublicCareOffer from './PublicCareOffer';
-import ProposalPDF from './ProposalPDF';
+const ClientPortal = lazy(() => import('./ClientPortal'));
+const PublicProjectView = lazy(() => import('./PublicProjectView'));
+const PublicCareOffer = lazy(() => import('./PublicCareOffer'));
+const ProposalPDF = lazy(() => import('./ProposalPDF'));
+
+// Εμφανίζεται όσο κατεβαίνει το κομμάτι κώδικα της σελίδας (συνήθως ms).
+const PageLoader = () => (
+  <div className="min-h-screen flex items-center justify-center bg-white">
+    <div className="w-8 h-8 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 
 // Βοηθητικό: τυλίγει προστατευμένες σελίδες στο Layout με το σωστό currentPageName.
 const wrap = (name, Component) => (
@@ -54,7 +67,9 @@ const wrap = (name, Component) => (
 export default function Pages() {
   return (
     <BrowserRouter>
-      <Routes>
+      {/* Suspense: απαραίτητο για τα lazy-loaded routes. */}
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
         {/* Δημόσιες */}
         <Route path="/" element={<Home />} />
         <Route path="/index" element={<Home />} />
@@ -96,7 +111,8 @@ export default function Pages() {
         <Route path="/admindashboard" element={wrap('admindashboard', AdminDashboard)} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
-      </Routes>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

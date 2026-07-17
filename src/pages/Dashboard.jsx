@@ -42,6 +42,7 @@ export default function Dashboard() {
   const [recentProjects, setRecentProjects] = useState([]);
   const [careVisits, setCareVisits] = useState([]);
   const [allClients, setAllClients] = useState([]);
+  const [firstName, setFirstName] = useState('');
   const [pendingPayments, setPendingPayments] = useState([]);
   const [allPayments, setAllPayments] = useState([]); // Added for monthly revenue
   const [allExpenses, setAllExpenses] = useState([]); // Added for expenses chart
@@ -62,6 +63,9 @@ export default function Dashboard() {
           console.warn("User or organization ID not found. Cannot load dashboard data.");
           return;
       }
+      // Μόνο το μικρό όνομα — «Καλημέρα Κοσμά» διαβάζεται καλύτερα από
+      // «Καλημέρα Κοσμά Παπαδόπουλε».
+      setFirstName((currentUser.full_name || '').trim().split(' ')[0] || '');
       const orgId = currentUser.organization_id;
 
       // Check trial status
@@ -127,6 +131,14 @@ export default function Dashboard() {
     setIsLoading(false);
   };
 
+  // Χαιρετισμός ανάλογα με την ώρα. Πριν έλεγε πάντα «Καλησπέρα», ακόμα
+  // και στις 8 το πρωί — που είναι ακριβώς η ώρα που ξεκινά ο τεχνίτης.
+  const hour = new Date().getHours();
+  const greeting = hour < 5 ? 'Καλησπέρα'
+    : hour < 12 ? 'Καλημέρα'
+    : hour < 18 ? 'Καλησπέρα'
+    : 'Καλησπέρα';
+
   return (
     <OrganizationGuard>
       <div className="p-4 md:p-8 space-y-8">
@@ -135,7 +147,7 @@ export default function Dashboard() {
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
             <div>
               <h1 className="text-2xl md:text-3xl lg:text-4xl font-bold text-slate-900 mb-2">
-                Καλησπέρα! 👋
+                {greeting}{firstName ? `, ${firstName}` : ''}! 👋
               </h1>
               <p className="text-sm md:text-base lg:text-lg text-slate-600">Εδώ είναι η επισκόπηση των έργων σας</p>
             </div>

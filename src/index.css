@@ -174,3 +174,37 @@ button:focus-visible {
   background-clip: text;
   color: transparent;
 }
+
+/* ------------------------------------------------------------------
+   Safe areas για κινητά με notch / gesture bar (iPhone X+, Android).
+   ΠΡΟΣΟΧΗ: οι κλάσεις αυτές χρησιμοποιούνταν στο Layout αλλά ΔΕΝ ήταν
+   ορισμένες πουθενά — δηλαδή δεν έκαναν τίποτα. Το περιεχόμενο κρυβόταν
+   κάτω από τη σταθερή μπάρα πλοήγησης.
+   Απαιτεί viewport-fit=cover στο index.html (υπάρχει).
+   ------------------------------------------------------------------ */
+.pwa-safe-area {
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+}
+
+/* Η σταθερή κάτω μπάρα: να μη μπαίνει κάτω από το gesture bar. */
+.pwa-bottom-bar {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Χώρος στο τέλος του περιεχομένου, ώστε η μπάρα να μην κρύβει
+   τα τελευταία στοιχεία (π.χ. κουμπιά σε φόρμες). */
+.pwa-content-bottom {
+  padding-bottom: calc(5rem + env(safe-area-inset-bottom));
+}
+
+@media (min-width: 1024px) {
+  .pwa-content-bottom { padding-bottom: 0; }
+}
+
+/* Επιπλέον χώρος στην κορυφή όταν τρέχει ως εγκατεστημένη εφαρμογή. */
+@media (display-mode: standalone) {
+  .pwa-standalone {
+    padding-top: calc(0.5rem + env(safe-area-inset-top));
+  }
+}
